@@ -1,0 +1,30 @@
+# 환경 변수
+.env
+*.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# 개인 미팅 자료 (음성, 사진)
+Meeting/
+*.m4a
+*.mov
+
+# 대용량 바이너리
+*.pptx
+*.pdf
+*.docx
+*.hwp
+
+# 로컬 전용
+Don't have to read./
+한이음/
+공모전/
+DEMO_v3.mov
