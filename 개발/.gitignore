@@ -1,0 +1,7 @@
+# 절대 git에 올리면 안 되는 것들
+.env
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.DS_Store
