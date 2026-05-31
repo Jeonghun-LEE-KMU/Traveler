@@ -5,7 +5,7 @@ RAG 엔지니어(이수연) ↔ LLM 엔지니어(정훈) 인터페이스 계약.
 - 이수연이 ContextData를 채워서 정훈의 generate_course()에 넘긴다
 - 정훈은 ContextData를 프롬프트에 주입해 GPT-4o를 호출한다
 - 출력 스키마: StreamingCourseModel (traveler/validation/schema.py 참조)
-- 스트리밍 방식: B (텍스트 + JSON 동시 스트리밍)
+- 스트리밍 방식: A (bot_message 텍스트 먼저, recommended_places JSON 나중)
 
 [변경 시 규칙]
 이 파일을 수정하면 반드시 양측(이수연, 정훈) 모두에게 알려야 한다.

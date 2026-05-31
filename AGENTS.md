@@ -1,6 +1,6 @@
-# CLAUDE.md — 트래블러
+# AGENTS.md — 트래블러
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 - **Notion**: https://www.notion.so/35dd359e315781779da7c6709df9feb5
 - **GitHub (공용)**: https://github.com/Traveler-map — 메인 레포: `mobility_rag`
@@ -148,7 +148,7 @@ COURSE_GENERATION_PROMPT = """..."""
 
 **에이전트 호출 시**: 사용자 질문 + 아래 프로젝트 컨텍스트를 함께 전달. 응답은 요약 없이 그대로 전달.
 
-**파일 저장 규칙**: Claude가 생성하는 코드 파일은 `code/` 폴더 내에 저장. 프롬프트 파일은 `code/traveler/prompts/` 디렉토리에서 관리.
+**파일 저장 규칙**: Codex가 생성하는 코드 파일은 `code/` 폴더 내에 저장. 프롬프트 파일은 `code/traveler/prompts/` 디렉토리에서 관리.
 
 ---
 
@@ -191,7 +191,7 @@ COURSE_GENERATION_PROMPT = """..."""
 │   ├── Meeting/                   # 회의록 (0407 등)
 │   ├── 공모전/                    # 공모전 관련 서류 (관광데이터, 공공데이터)
 │   └── 사진정보/                  # 서비스 사진/아키텍처 이미지
-├── CLAUDE.md                      # 이 파일
+├── AGENTS.md                      # 이 파일
 └── README.md
 ```
 
@@ -213,7 +213,7 @@ mobility_rag/                      # 공용 팀 레포 (이수연 메인 담당)
 스트리밍 중: data: {"bot_message": "텍스트 청크", "recommended_places": []}
 마지막 청크: data: {"bot_message": "", "recommended_places": [{"place_id": 1, "visit_sequence": 1}, ...]}
 ```
-✅ `place_name`, `duration_min` → Optional로 변경 (2026-06-01). 이수연 포맷 그대로 수용, 백엔드가 SQLite로 채움.
+⚠️ `place_name`, `duration_min` 필드 없음 → 정훈 `RecommendedPlaceModel`과 스키마 불일치. 합의 필요.
 
 ### Git 브랜치 전략 (이수연 확정 — 2026-05-27)
 - `develop` 브랜치가 base. **절대 develop에 직접 push 금지**
