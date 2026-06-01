@@ -2,22 +2,9 @@
 여행 코스 생성 핵심 모듈.
 
 파이프라인 위치:
-  ContextData (이수연 RAG 출력)
-    → ★ [이 모듈: generate_course()]
-    → StreamingCourseModel (Pydantic 검증 완료)
-    → FastAPI → 지도 시각화
+  ContextData → ★ generate_course() → StreamingCourseModel → FastAPI
 
-WHY main.py에서 분리했는가? (T2)
-  generate_course()는 비즈니스 로직이고, main.py는 CLI 진입점이다.
-  FastAPI 서버(Sprint 2)가 생기면 main.py 대신 api/routes.py에서
-  이 함수를 import해야 한다. 로직이 main.py에 있으면 그때 다시 옮겨야 함.
-  지금 분리해두면 Sprint 2에서 import 경로 하나만 바꾸면 끝.
-
-WHY ContextData를 받는가? (T1)
-  이전: generate_course(req: TravelRequest) — LLM 엔지니어가 만든 내부 데이터 클래스
-  이후: generate_course(ctx: ContextData) — 팀 인터페이스 계약 (rag/types.py)
-  이수연의 RAG 파이프라인이 ContextData를 만들어서 이 함수에 넘긴다.
-  TravelRequest는 이수연이 모르는 내부 구조이므로 인터페이스로 쓰면 안 됨.
+이수연의 RAG 파이프라인이 ContextData를 채워서 이 함수에 전달한다.
 """
 
 import logging
