@@ -178,7 +178,7 @@ def test_max_places_boundary():
         StreamingCourseModel.model_validate(valid_course(places_11))
 
 
-# ── Test 7: place_id 경계값 (0 차단) ─────────────────────────────────────────
+# ── Test 8: place_id 경계값 (0 차단) ─────────────────────────────────────────
 
 def test_place_id_zero_raises():
     """

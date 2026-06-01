@@ -20,12 +20,16 @@ WHY ContextData를 받는가? (T1)
   TravelRequest는 이수연이 모르는 내부 구조이므로 인터페이스로 쓰면 안 됨.
 """
 
+import logging
 import time
 
 from traveler.core.llm_client import MODEL, get_client
 from traveler.core.prompt import build_context_message, get_system_prompt
 from traveler.rag.types import ContextData
 from traveler.validation.schema import StreamingCourseModel
+
+# WHY __name__: 로그 출처가 "traveler.core.course_generator"로 표시되어 디버깅이 쉬워진다
+logger = logging.getLogger(__name__)
 
 
 async def generate_course(
@@ -68,29 +72,31 @@ async def generate_course(
     full_text = ""   # 토큰 누적 버퍼
     usage = None     # 마지막 청크에서 수집할 토큰 통계
 
-    print("\n[스트리밍 시작]")
+    logger.debug("스트리밍 시작")
     async for chunk in stream:
         # delta.content: 이번 청크에서 새로 생성된 텍스트 조각
         # 마지막 청크는 content가 None → 조건문으로 스킵
         if chunk.choices and chunk.choices[0].delta.content:
             delta = chunk.choices[0].delta.content
-            print(delta, end="", flush=True)   # 터미널 실시간 출력
             full_text += delta                 # 버퍼 누적
         if chunk.usage:
             usage = chunk.usage
 
-    print()   # 스트리밍 완료 후 줄바꿈
     latency = time.time() - t_start
 
     # 토큰 사용량 로그 (비용 추적용)
     if usage:
-        print(f"\n[LLM LOG] model={MODEL}")
-        print(f"  입력 토큰: {usage.prompt_tokens:,}")
-        print(f"  출력 토큰: {usage.completion_tokens:,}")
-        print(f"  전체 토큰: {usage.total_tokens:,}")
-        print(f"  응답 시간: {latency:.2f}초")
         cost = usage.prompt_tokens * 2.5e-6 + usage.completion_tokens * 10e-6
-        print(f"  예상 비용: ${cost:.5f} (≈ {cost * 1350:.2f}원)")
+        logger.info(
+            "[LLM LOG] model=%s | 입력=%s | 출력=%s | 전체=%s | 응답=%.2f초 | 비용=$%.5f(≈%.2f원)",
+            MODEL,
+            f"{usage.prompt_tokens:,}",
+            f"{usage.completion_tokens:,}",
+            f"{usage.total_tokens:,}",
+            latency,
+            cost,
+            cost * 1350,
+        )
 
     # 스트리밍 완료 후 full_text는 완전한 JSON 문자열
     # Pydantic 검증 — 스키마 불일치 시 ValidationError 발생
