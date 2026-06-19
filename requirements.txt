@@ -89,3 +89,10 @@ numpy>=1.26.0
 python-logging-loki==0.3.1
 # 역할: 실시간 시스템 로그 수집
 # 설명: FastAPI 서버가 돌아가면서 발생하는 에러나 유저 요청 로그를 중앙 서버로 쏴주는 백엔드 모니터링 필수 패키지
+
+# ========================================
+# [9] Cache — Redis (Sprint 2 추가)
+# ========================================
+redis>=5.0.0
+# 역할: Redis 비동기 클라이언트 (redis.asyncio 포함)
+# 설명: trip_session visited SET + 누적 선호도 prefs HASH 저장. TTL 24h.

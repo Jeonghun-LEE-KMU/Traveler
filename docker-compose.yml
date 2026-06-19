@@ -1,0 +1,25 @@
+# ============================================================
+# TRAVELER 로컬 개발 환경
+# Sprint 2: Redis (trip_session) 추가
+#
+# 실행: docker compose up -d
+# 종료: docker compose down
+# Redis CLI 접속: docker exec -it traveler-redis redis-cli
+# ============================================================
+
+version: '3.9'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: traveler-redis
+    ports:
+      - "6379:6379"
+    # --save "" --appendonly no: 디스크 저장 비활성화
+    # trip_session은 24h TTL이라 영속화 불필요, 메모리만 사용
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
