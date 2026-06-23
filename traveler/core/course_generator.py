@@ -10,13 +10,34 @@
 import logging
 import time
 
+from pydantic import ValidationError
+
 from traveler.core.llm_client import MODEL, get_client
 from traveler.core.prompt import build_context_message, get_system_prompt
 from traveler.rag.types import ContextData
-from traveler.validation.schema import StreamingCourseModel
+from traveler.validation.schema import RecommendedPlaceModel, StreamingCourseModel
 
 # WHY __name__: 로그 출처가 "traveler.core.course_generator"로 표시되어 디버깅이 쉬워진다
 logger = logging.getLogger(__name__)
+
+
+def _build_fallback(ctx: ContextData) -> StreamingCourseModel:
+    """
+    GPT 출력이 JSON 파싱/스키마 검증에 실패했을 때 반환하는 안전 응답.
+
+    # WHY: 파싱이 깨져도 generate_course()는 항상 유효한 StreamingCourseModel을
+    # 반환해야 한다(Graceful Degradation). candidate_spots가 있으면 그중
+    # 첫 번째 place_id를 쓰고, 없으면 1을 쓴다(recommended_places는 min_length=1).
+    """
+    fallback_place_id = (
+        ctx.candidate_spots[0].place_id if ctx.candidate_spots else 1
+    )
+    return StreamingCourseModel(
+        bot_message="죄송해요, 지금 코스를 만드는 데 문제가 있었어요. 잠시 후 다시 시도해주세요.",
+        recommended_places=[
+            RecommendedPlaceModel(place_id=fallback_place_id, visit_sequence=1)
+        ],
+    )
 
 
 async def generate_course(
@@ -86,6 +107,11 @@ async def generate_course(
         )
 
     # 스트리밍 완료 후 full_text는 완전한 JSON 문자열
-    # Pydantic 검증 — 스키마 불일치 시 ValidationError 발생
-    course = StreamingCourseModel.model_validate_json(full_text)
+    # Pydantic 검증 — JSON 문법 오류와 스키마 불일치 모두 ValidationError로 들어옴
+    try:
+        course = StreamingCourseModel.model_validate_json(full_text)
+    except ValidationError as e:
+        # ⚠️ 주의: 데모 중단 방지 — 원인은 로그로만 남기고 안전 응답으로 계속
+        logger.warning("코스 생성 실패, fallback 사용: %s", e)
+        course = _build_fallback(ctx)
     return course

@@ -11,6 +11,10 @@ WHY 이 테스트가 필요한가:
   ContextData → ★ build_context_message() → GPT user 메시지 → 코스 생성
 """
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
+from traveler.core.course_generator import generate_course
 from traveler.core.prompt import build_context_message
 from traveler.rag.types import ContextData, SpotCandidate
 
@@ -39,6 +43,42 @@ def sample_spot(place_id: int = 1) -> SpotCandidate:
         distance_min=20.0,
         indoor=False,
     )
+
+
+def _chunk(content: str | None = None, usage=None) -> SimpleNamespace:
+    """
+    OpenAI 스트리밍 청크를 흉내내는 가짜 객체.
+
+    WHY: 실제 OpenAI API를 호출하지 않고 스트리밍 루프(course_generator.py)를
+    테스트하기 위함. content가 있으면 choices[0].delta.content로,
+    usage 청크(마지막)는 choices=[]로 — 실제 API 동작과 동일한 모양.
+    """
+    if content is not None:
+        return SimpleNamespace(
+            choices=[SimpleNamespace(delta=SimpleNamespace(content=content))],
+            usage=usage,
+        )
+    return SimpleNamespace(choices=[], usage=usage)
+
+
+async def _fake_stream(chunks: list[SimpleNamespace]):
+    """가짜 비동기 스트림 — course_generator.py의 `async for chunk in stream`이 그대로 동작."""
+    for chunk in chunks:
+        yield chunk
+
+
+def _mock_client_with_chunks(mock_get_client, chunks: list[SimpleNamespace]) -> None:
+    """get_client() 패치 대상에 가짜 chat.completions.create를 연결."""
+    fake_usage = SimpleNamespace(prompt_tokens=10, completion_tokens=5, total_tokens=15)
+    chunks = chunks + [_chunk(usage=fake_usage)]   # 실제 API의 마지막 usage 청크
+    mock_client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(
+                create=AsyncMock(return_value=_fake_stream(chunks))
+            )
+        )
+    )
+    mock_get_client.return_value = mock_client
 
 
 # ── Test 1: 필수 필드가 메시지에 포함되는지 ───────────────────────────────────
@@ -136,3 +176,49 @@ def test_indoor_flag_included_in_spot_info():
 
     assert "실내" in msg
     assert "실외" in msg
+
+
+# ── Test 6: 정상 JSON 스트리밍 → 검증 통과 (회귀 방지용 happy path) ───────────
+
+@patch("traveler.core.course_generator.get_client")
+async def test_generate_course_valid_json_parses_successfully(mock_get_client):
+    """
+    GPT가 스키마에 맞는 JSON을 스트리밍하면 그대로 파싱되는지 확인.
+
+    WHY: fallback 로직을 추가하면서 정상 흐름을 깨뜨리지 않았는지 보장하는
+    회귀 테스트. generate_course() 전체를 처음으로 테스트하는 케이스.
+    """
+    valid_json = (
+        '{"bot_message": "경주 코스를 추천해요", '
+        '"recommended_places": [{"place_id": 1, "visit_sequence": 1}]}'
+    )
+    chunks = [_chunk(valid_json[:20]), _chunk(valid_json[20:])]
+    _mock_client_with_chunks(mock_get_client, chunks)
+
+    ctx = minimal_ctx()
+    course = await generate_course(ctx)
+
+    assert course.bot_message == "경주 코스를 추천해요"
+    assert course.recommended_places[0].place_id == 1
+
+
+# ── Test 7: 깨진 JSON → ValidationError → fallback 반환 ──────────────────────
+
+@patch("traveler.core.course_generator.get_client")
+async def test_generate_course_malformed_json_returns_fallback(mock_get_client):
+    """
+    GPT가 깨진(잘리거나 스키마에 안 맞는) JSON을 주면 예외를 던지지 않고
+    안전한 fallback StreamingCourseModel을 반환하는지 확인.
+
+    WHY: "API 오류나 JSON 파싱 실패 시 데모가 멈추지 않아야 한다"는 요구사항.
+    이 테스트가 없으면 fallback 코드가 조용히 죽은 코드가 될 위험이 있음.
+    """
+    broken_json = '{"bot_message": "경주 코스를 추천'   # 닫는 괄호 없이 잘림
+    chunks = [_chunk(broken_json)]
+    _mock_client_with_chunks(mock_get_client, chunks)
+
+    ctx = minimal_ctx()   # candidate_spots=[] → fallback place_id는 1
+    course = await generate_course(ctx)
+
+    assert "문제가 있었" in course.bot_message
+    assert course.recommended_places[0].place_id == 1
