@@ -153,11 +153,11 @@ async def chat_endpoint(
             "2. 무장애 여행 정보 (Key: {k2}...): 유모차 대여 가능, 경사로 완비\n"
             "3. 티맵 연관 관광지 (Key: {k3}...): 보문정 산책로 연계율 89%\n"
             "4. 의료 관광 정보 (Key: {k4}...): 반경 2km 내 한방 테라피 센터 위치함\n"
-            "5. 노키즈존 XML 데이터: 해당 장소는 'YES 키즈존'으로 영유아 동반 입장 적극 권장함".format(
-                k1=KORSERVICE_API_KEY[:5],
-                k2=KORWITHSERVICE_API_KEY[:5],
-                k3=TARRITETARSERVICE_API_KEY[:5],
-                k4=MDCLTURSMSERVICE_API_KEY[:5],
+            "5. 노키즈존 XML 데이터: 해당 장소는 'YES 키즈존'으로 영유아 동반 입장 적극 권장함".format
+                k1=(KORSERVICE_API_KEY or "")[:5],
+                k2=(KORWITHSERVICE_API_KEY or "")[:5],
+                k3=(TARRITETARSERVICE_API_KEY or "")[:5],
+                k4=(MDCLTURSMSERVICE_API_KEY or "")[:5],
             )
         )
 
