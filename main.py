@@ -220,7 +220,6 @@ async def clear_session_data(session_id: str):
         "cleared": ["visited", "prefs", "chat_history"],
     }
 
-
 @app.get("/health")
 async def health_check():
     """서버 + Redis 연결 상태 확인"""
