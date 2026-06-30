@@ -11,6 +11,7 @@ WHY 이 테스트가 필요한가:
   ContextData → ★ build_context_message() → GPT user 메시지 → 코스 생성
 """
 
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -222,3 +223,82 @@ async def test_generate_course_malformed_json_returns_fallback(mock_get_client):
 
     assert "문제가 있었" in course.bot_message
     assert course.recommended_places[0].place_id == 1
+
+
+# ── Test 8: 계절(L2)이 today 주입값 기준으로 메시지에 포함되는지 ──────────────
+
+def test_season_included_with_injected_today():
+    """
+    today를 주입하면 그 날짜 기준 계절이 메시지에 포함되는지 확인.
+
+    WHY: 계절은 ContextData가 아니라 build_context_message()가 직접 계산한다
+    (get_season() 참조). today를 안 고정하면 테스트가 실행 시점의 실제 날짜에
+    좌우되므로, 여기서는 1월로 고정해 "겨울"이 나오는지를 검증한다.
+    """
+    ctx = minimal_ctx()
+    msg = build_context_message(ctx, today=date(2026, 1, 15))
+
+    assert "현재 계절: 겨울" in msg
+
+
+# ── Test 9: API 호출 자체 실패(타임아웃/네트워크) → fallback 반환 ────────────────
+
+@patch("traveler.core.course_generator.get_client")
+async def test_generate_course_api_error_returns_fallback(mock_get_client):
+    """
+    OpenAI API 호출 자체가 예외(타임아웃·네트워크 끊김·rate limit 등)를 던져도
+    예외를 전파하지 않고 안전한 fallback StreamingCourseModel을 반환하는지 확인.
+
+    WHY: "API 오류 시 graceful degradation"(MVP1 P0 요구사항)은 JSON 파싱뿐 아니라
+    API 호출 자체가 실패한 경우에도 보장되어야 한다. ValidationError만 잡으면
+    타임아웃 같은 비(非)-ValidationError 예외가 generate_course()를 그대로 터뜨려
+    데모가 중단된다. 이 테스트는 API 호출 경로도 fallback으로 흡수되는지 검증한다.
+    """
+    # create()가 호출되는 순간 예외를 던지도록 side_effect 설정
+    # (malformed-JSON 테스트는 return_value로 정상 스트림을 주지만, 여기선 호출 자체가 실패)
+    mock_client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(
+                create=AsyncMock(side_effect=Exception("simulated API timeout"))
+            )
+        )
+    )
+    mock_get_client.return_value = mock_client
+
+    ctx = minimal_ctx()   # candidate_spots=[] → fallback place_id는 1
+    course = await generate_course(ctx)
+
+    assert "문제가 있었" in course.bot_message
+    assert course.recommended_places[0].place_id == 1
+
+
+# ── Test 10: companion이 있으면 "동행자:" 줄이 메시지에 포함 ─────────────────
+
+def test_companion_line_included_when_set():
+    """
+    companion="혼자" → "동행자: 혼자" 줄이 메시지에 포함되는지 확인.
+
+    WHY: 개정된 정책에서 "혼자"는 빈 문자열이 아니라 가드(if ctx.companion:)를
+    통과하는 실제 라벨이다. 명시적으로 혼자라고 말한 정보를 GPT에 전달해야 한다.
+    """
+    ctx = minimal_ctx(companion="혼자")
+    msg = build_context_message(ctx)
+
+    assert "동행자" in msg
+    assert "혼자" in msg
+
+
+# ── Test 11: companion이 빈 문자열이면 "동행자" 줄이 생략 ────────────────────
+
+def test_companion_line_omitted_when_empty():
+    """
+    companion="" (동승자 미언급) → "동행자" 줄이 메시지에서 생략되는지 확인.
+
+    WHY: 미언급("")은 "혼자라고 단정"하면 안 되는 정보 없음 상태다. 가드가
+    빈 문자열을 걸러 "동행자" 줄 자체를 빼야 GPT에 솔로 편향을 주지 않는다
+    (mood/route_summary의 기존 Graceful Degradation 패턴과 동일).
+    """
+    ctx = minimal_ctx(companion="")
+    msg = build_context_message(ctx)
+
+    assert "동행자" not in msg

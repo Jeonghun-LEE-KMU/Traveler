@@ -17,8 +17,10 @@ Constraint-Aware CoT 프롬프트 모듈.
 """
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Optional
 
+from traveler.core.season import get_season
 from traveler.rag.types import ContextData
 
 
@@ -71,11 +73,12 @@ _COMMON_BASE = """\
 코스를 생성하기 전에 내부적으로 아래 4개 제약을 반드시 점검하십시오.
 
 1. 시간 제약: 총 가용 시간, 이동 수단
-2. 날씨 제약: 현재 날씨, 실외 활동 가능 여부
+2. 날씨·계절 제약: 현재 날씨, 계절, 실외 활동 가능 여부
 3. 동선 제약: 이동 반경, 체력 수준
 4. 특수 제약: 동행자 유형, 예산, 특이사항
 
 날씨가 "비" 또는 "흐림"이면 실내 위주로 구성하십시오.
+계절에 따라 특화 활동을 우선 고려하십시오 (예: 여름→물놀이·빙수, 겨울→온천·실내 액티비티).
 
 [출력 형식 — 스트리밍 최적화]
 반드시 아래 JSON 구조로만 응답하십시오. JSON 외 텍스트 금지.
@@ -293,7 +296,7 @@ def get_system_prompt(mode: str) -> str:
 #   새 코드는 build_context_message()를 사용할 것.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-def build_context_message(ctx: ContextData) -> str:
+def build_context_message(ctx: ContextData, today: date | None = None) -> str:
     """
     ContextData 객체를 LLM에 보낼 user 메시지 문자열로 변환한다.
 
@@ -304,6 +307,10 @@ def build_context_message(ctx: ContextData) -> str:
     #   이수연은 ContextData만 만들면 되고, GPT 프롬프트 형식은 몰라도 된다.
     #
     # INPUT:  ContextData — 이수연이 채운 컨텍스트 (RAG 결과 포함)
+    #         today — 계절 계산 기준 날짜 (기본 None → 실제 오늘 날짜).
+    #         계절(L2)은 RAG 출력이 아니라 날짜로만 정해지므로 ContextData에는
+    #         넣지 않고 여기서 직접 계산한다. today를 받는 이유는 get_season()과
+    #         동일하게 테스트에서 월 경계를 wall-clock과 무관하게 검증하기 위함.
     # OUTPUT: str — GPT user 메시지 (candidate_spots 목록 포함)
     #
     # ⚠️ candidate_spots가 빈 리스트면 GPT가 장소를 자유롭게 생성하게 됨
@@ -313,12 +320,14 @@ def build_context_message(ctx: ContextData) -> str:
         f"사용자 요청: {ctx.user_query}",
         f"현재 위치: 위도 {ctx.current_lat}, 경도 {ctx.current_lng}",
         f"현재 날씨: {ctx.weather}",
+        f"현재 계절: {get_season(today)}",
         f"가용 시간: {ctx.duration_hours}시간",
         f"이동 수단: {ctx.transport}",
-        f"동행자: {ctx.companion}",
     ]
 
     # Optional 필드는 값이 있을 때만 추가 (Graceful Degradation)
+    if ctx.companion:
+        parts.append(f"동행자: {ctx.companion}")
     if ctx.mood:
         parts.append(f"원하는 분위기: {ctx.mood}")
     if ctx.route_summary:

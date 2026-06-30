@@ -10,6 +10,7 @@ RAG retriever — 이수연 RAG 파이프라인 연결 전 개발/테스트용 �
   함수 시그니처와 반환 타입(ContextData)은 변경하지 않는다.
 """
 
+from traveler.core.intent import parse_companion
 from traveler.rag.types import ContextData, SpotCandidate
 
 
@@ -74,7 +75,7 @@ def get_context(
         candidate_spots=spots,
         duration_hours=4,
         transport="자차",
-        companion="친구",
+        companion=parse_companion(user_query),
         mood="역사적인 분위기, 여유로운",
         route_summary="",       # 더미: 실제는 Tmap API가 채움 (Sprint 2)
     )

@@ -64,31 +64,39 @@ async def generate_course(
 
     # WHY get_system_prompt(travel_mode)?
     # 여행 모드에 따라 다른 SystemPrompt 선택. 호출부는 내용을 몰라도 됨.
-    stream = await get_client().chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": get_system_prompt(travel_mode)},
-            {"role": "user", "content": user_message},
-        ],
-        response_format={"type": "json_object"},   # JSON만 반환
-        temperature=0.3,
-        stream=True,
-        stream_options={"include_usage": True},    # 마지막 청크에 usage 포함
-    )
+    # ⚠️ 주의: API 호출/스트리밍은 타임아웃·네트워크 끊김·rate limit 등
+    # ValidationError가 아닌 예외를 던질 수 있다. 이 경우에도 데모가 멈추지 않도록
+    # fallback으로 흡수한다(Graceful Degradation, MVP1 P0 요구사항).
+    try:
+        stream = await get_client().chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": get_system_prompt(travel_mode)},
+                {"role": "user", "content": user_message},
+            ],
+            response_format={"type": "json_object"},   # JSON만 반환
+            temperature=0.3,
+            stream=True,
+            stream_options={"include_usage": True},    # 마지막 청크에 usage 포함
+        )
 
-    # 스트리밍 수신 루프
-    full_text = ""   # 토큰 누적 버퍼
-    usage = None     # 마지막 청크에서 수집할 토큰 통계
+        # 스트리밍 수신 루프
+        full_text = ""   # 토큰 누적 버퍼
+        usage = None     # 마지막 청크에서 수집할 토큰 통계
 
-    logger.debug("스트리밍 시작")
-    async for chunk in stream:
-        # delta.content: 이번 청크에서 새로 생성된 텍스트 조각
-        # 마지막 청크는 content가 None → 조건문으로 스킵
-        if chunk.choices and chunk.choices[0].delta.content:
-            delta = chunk.choices[0].delta.content
-            full_text += delta                 # 버퍼 누적
-        if chunk.usage:
-            usage = chunk.usage
+        logger.debug("스트리밍 시작")
+        async for chunk in stream:
+            # delta.content: 이번 청크에서 새로 생성된 텍스트 조각
+            # 마지막 청크는 content가 None → 조건문으로 스킵
+            if chunk.choices and chunk.choices[0].delta.content:
+                delta = chunk.choices[0].delta.content
+                full_text += delta                 # 버퍼 누적
+            if chunk.usage:
+                usage = chunk.usage
+    except Exception as e:
+        # ⚠️ 주의: 데모 중단 방지 — API 호출/스트리밍 오류는 로그로만 남기고 안전 응답으로 계속
+        logger.warning("API 호출 실패, fallback 사용: %s", e)
+        return _build_fallback(ctx)
 
     latency = time.time() - t_start
 
