@@ -57,6 +57,49 @@ class TravelRequest:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# [BLOCK 0] 모드별 장소 구성 비율 — SSOT (Single Source of Truth)
+#
+# WHY 파일 상단에 두는가?
+#   아래 페르소나 프롬프트(_NEARBY_PERSONA·_build_destination_persona)가
+#   f-string으로 이 값을 주입한다. Python은 위에서 아래로 실행되므로,
+#   페르소나 정의 전에 MODE_WEIGHTS와 _pct()가 먼저 정의돼 있어야 한다.
+# WHY 이렇게 상수로 분리하는가?
+#   비율이 프롬프트 문자열 안에만 있으면 테스트가 검증하기 어렵고, 상수(0.70)와
+#   프롬프트 텍스트("70%")가 따로 놀아 한쪽만 고치면 조용히 어긋난다(silent drift).
+#   비율을 이 dict 한 곳에만 두고 프롬프트가 f-string으로 끌어오면, 진실이 한
+#   곳에만 존재한다. 비율을 바꿀 땐 이 dict만 고치면 프롬프트·테스트가 함께 반영된다.
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MODE_WEIGHTS: dict[str, dict[str, float]] = {
+    "근교": {
+        "hidden":   0.70,  # 숨은 명소
+        "iconic":   0.20,  # 대표 명소
+        "creative": 0.10,  # 창의적 추천
+    },
+    "타지": {
+        "iconic":   0.45,
+        "hidden":   0.45,
+        "creative": 0.10,
+    },
+    "장거리": {
+        "iconic":   0.45,
+        "hidden":   0.45,
+        "creative": 0.10,
+    },
+}
+
+
+def _pct(mode: str, key: str) -> int:
+    """
+    MODE_WEIGHTS의 비율(0.0~1.0)을 프롬프트에 넣을 정수 퍼센트로 변환한다.
+
+    # WHY: 페르소나가 "70%"를 하드코딩하는 대신 이 함수로 MODE_WEIGHTS에서 값을
+    #   끌어오면 비율의 진실이 MODE_WEIGHTS 한 곳에만 존재한다(SSOT).
+    # WHY round(): 0.70 * 100 = 70.00000000000001 같은 부동소수 오차를 정수로 정리.
+    """
+    return round(MODE_WEIGHTS[mode][key] * 100)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # [BLOCK 1] 공통 기반 — 3종 모드 전체가 공유하는 역할·CoT·출력 형식
 #
 # WHY 별도 상수로 분리?
@@ -110,15 +153,15 @@ _COMMON_BASE = """\
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 # ── 🏡 근교 모드 전용 페르소나 ───────────────────────────────────────────────
-_NEARBY_PERSONA = """
+_NEARBY_PERSONA = f"""
 [여행 유형 — 근교 드라이브 🏡]
 사용자는 해당 지역 근처에 거주하거나 자주 방문하는 로컬입니다.
 대표 관광지는 이미 알고 있으므로 숨겨진 명소 위주로 추천하십시오.
 
 장소 구성 비율 (엄수):
-  - 숨은 명소 (로컬 카페, 잘 알려지지 않은 산책로, 숨겨진 맛집): 70%
-  - 대표 명소 (필요 시 1~2곳 포함 가능): 20%
-  - 창의적 추천 (계절·날씨 특화 이색 경험): 10%
+  - 숨은 명소 (로컬 카페, 잘 알려지지 않은 산책로, 숨겨진 맛집): {_pct("근교", "hidden")}%
+  - 대표 명소 (필요 시 1~2곳 포함 가능): {_pct("근교", "iconic")}%
+  - 창의적 추천 (계절·날씨 특화 이색 경험): {_pct("근교", "creative")}%
 
 visited_spots 목록이 제공되면 해당 장소는 반드시 추천에서 제외하십시오.
 """
@@ -129,16 +172,24 @@ visited_spots 목록이 제공되면 해당 장소는 반드시 추천에서 제
 #   사용자가 "목적지에 도착한 뒤 어디를 갈지" 추천하는 로직은 동일하다.
 #   장거리 모드는 "목적지까지 가는 길" 정보가 추가될 뿐,
 #   목적지에서의 동선 추천 방식 자체는 타지 여행객과 다르지 않다.
-_DESTINATION_PERSONA = """
+def _build_destination_persona(mode: str) -> str:
+    """
+    타지·장거리 공통 목적지 페르소나를 해당 모드의 MODE_WEIGHTS로 생성한다.
+    """
+    return f"""\
 [여행 유형 — 목적지 여행 (타지 · 장거리 공통) ✈️🚗]
 사용자는 해당 지역을 처음 방문하거나 낯선 여행객입니다.
 그 지역의 정체성을 느낄 수 있도록 대표 명소와 숨겨진 명소를 균형 있게 추천하십시오.
 
 장소 구성 비율 (엄수):
-  - 대표 명소 (그 지역을 대표하는 랜드마크·필수 코스): 45%
-  - 숨은 명소 (로컬이 즐겨 찾는 장소, 덜 알려진 명소): 45%
-  - 창의적 추천 (계절·날씨 특화 이색 경험): 10%
+  - 대표 명소 (그 지역을 대표하는 랜드마크·필수 코스): {_pct(mode, "iconic")}%
+  - 숨은 명소 (로컬이 즐겨 찾는 장소, 덜 알려진 명소): {_pct(mode, "hidden")}%
+  - 창의적 추천 (계절·날씨 특화 이색 경험): {_pct(mode, "creative")}%
 """
+
+
+_DESTINATION_PERSONA = _build_destination_persona("타지")
+_LONGDRIVE_DESTINATION_PERSONA = _build_destination_persona("장거리")
 
 # ── 🚗 장거리 전용 추가 지침 — _DESTINATION_PERSONA 뒤에 덧붙임 ─────────────
 #
@@ -219,8 +270,8 @@ _FEW_SHOT_SECTION = """
 #     = _COMMON_BASE + _DESTINATION_PERSONA + _FEW_SHOT_SECTION
 #
 #   SYSTEM_PROMPT_LONGDRIVE
-#     = _COMMON_BASE + _DESTINATION_PERSONA + _WAYPOINT_ADDON + _FEW_SHOT_SECTION
-#                      ↑ 타지와 동일 (DRY)   ↑ 장거리만 추가
+#     = _COMMON_BASE + _LONGDRIVE_DESTINATION_PERSONA + _WAYPOINT_ADDON + _FEW_SHOT_SECTION
+#                      ↑ 같은 템플릿, 장거리 MODE_WEIGHTS 주입   ↑ 장거리만 추가
 #
 #   SYSTEM_PROMPT_NEARBY
 #     = _COMMON_BASE + _NEARBY_PERSONA + _FEW_SHOT_SECTION
@@ -239,7 +290,7 @@ SYSTEM_PROMPT_TOURIST = (
 
 SYSTEM_PROMPT_LONGDRIVE = (
     _COMMON_BASE
-    + _DESTINATION_PERSONA   # WHY: 목적지 추천 로직은 타지와 동일 — 중복 없이 재사용
+    + _LONGDRIVE_DESTINATION_PERSONA  # WHY: 같은 템플릿을 쓰되 장거리 MODE_WEIGHTS 주입
     + _WAYPOINT_ADDON        # WHY: 장거리만 필요한 경유지 안내를 덧붙임
     + _FEW_SHOT_SECTION
 )

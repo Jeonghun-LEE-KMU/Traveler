@@ -17,6 +17,7 @@ WHY 이 스크립트가 필요한가:
   흡수하므로, 키 없이도 죽지 않고 폴백 응답을 출력한다 — 이것 자체가 P0의
   graceful degradation 증거다.
 
+  # 실행 예시: python scripts/smoke_test.py
   # 실제 GPT-4o 응답을 보려면: export OPENAI_API_KEY=... 후 재실행
 
 주의: retriever.py는 Sprint 1 DUMMY라 duration_hours=4, transport="자차"가 내부에
@@ -29,7 +30,7 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
-# WHY sys.path 삽입: 이 스크립트를 어느 위치에서 실행하든(예: python3 scripts/smoke_test.py)
+# WHY sys.path 삽입: 이 스크립트를 어느 위치에서 실행하든(예: python scripts/smoke_test.py)
 #   리포 루트가 import 경로에 들어가야 `from traveler...`가 풀린다.
 #   parents[1] = scripts/의 부모 = 리포 루트(mobility_rag/).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -56,7 +57,7 @@ async def run() -> None:
     print(json.dumps(asdict(ctx), ensure_ascii=False, indent=2))
 
     # 2단계: 코스 생성 (키 없으면 내부 fallback으로 흡수 — graceful degradation)
-    course = await generate_course(ctx)
+    course = await generate_course(ctx, travel_mode="근교")
     print("\n[2단계] generate_course() → StreamingCourseModel")
     print(course.model_dump_json(indent=2))
 
