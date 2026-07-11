@@ -114,6 +114,43 @@ def test_no_companion_mentioned_returns_empty(user_query):
     assert parse_companion(user_query) == ""
 
 
+# ── 6.5b 맨몸 키워드 부분열 오탐 제거 회귀 (fix/jeonghun/intent-fp) ───────────
+#
+# WHY 이 섹션이 필요한가:
+#   "아이"/"자기"/"팀"처럼 짧고 흔한 맨몸 키워드는 "아이스", "자기 전", "팀장님"
+#   같은 무관한 단어 안에 부분 문자열로 우연히 포함돼 오탐을 낸다. 조사 결합형
+#   ("아이랑","팀이랑" 등)으로 교체한 뒤 실제로 오탐이 사라졌는지 회귀로 고정한다.
+
+def test_ice_americano_does_not_match_child():
+    """
+    "아이스"의 "아이"가 맨몸 키워드였을 때 "아이" 카테고리로 오탐되던 케이스.
+
+    WHY: "혼자"도 함께 언급되므로, 오탐이 사라지면 "혼자"가 정상적으로 이겨야
+    한다(우선순위상 "아이"가 위에 있어 오탐 시 "아이"가 먼저 매칭됐었다).
+    """
+    assert parse_companion("아이스 아메리카노 마시며 혼자 드라이브") == "혼자"
+
+
+def test_jagi_jeon_does_not_match_lover():
+    """
+    "자기 전"의 "자기"가 맨몸 키워드였을 때 "연인" 카테고리로 오탐되던 케이스.
+
+    WHY: 동승자 언급이 전혀 없는 문장이므로, 오탐이 사라지면 미언급("")이 맞다.
+    """
+    assert parse_companion("자기 전에 갈만한 야경") == ""
+
+
+def test_team_leader_does_not_match_group():
+    """
+    "팀장님"의 "팀"이 맨몸 키워드였을 때 "단체/모임" 카테고리로 오탐되던 케이스.
+
+    WHY: "팀장님이랑 둘이"는 실제로는 동승자 카테고리 중 무엇에도 명확히
+    속하지 않는 애매한 표현이다. 오분류(특히 "단체/모임"으로 잘못 단정)보다
+    미언급("")으로 안전하게 떨어지는 편이 낫다는 정책을 회귀로 고정한다.
+    """
+    assert parse_companion("팀장님이랑 둘이") != "단체/모임"
+
+
 # ── 6.6 None / 빈 / 공백 입력 (4절 Graceful Degradation) ─────────────────────
 
 @pytest.mark.parametrize(

@@ -39,9 +39,7 @@ class RecommendedPlaceModel(BaseModel):
     place_id: int = Field(ge=1)                        # SQLite 장소 ID (PK) — 필수
     visit_sequence: int = Field(ge=1)                  # 방문 순서 (1부터) — 필수
     place_name: Optional[str] = None                   # 장소명 — 백엔드가 SQLite로 채움
-    duration_min: Optional[int] = Field(              # 체류 시간 — TourAPI로 채울 예정
-        default=None, ge=10, le=480
-    )
+    duration_min: Optional[int] = None                 # 체류 시간 — TourAPI로 채울 예정. 범위는 _clamp_duration이 흡수
 
     @field_validator("place_name")
     @classmethod
@@ -53,6 +51,20 @@ class RecommendedPlaceModel(BaseModel):
         if v is not None and not v.strip():
             raise ValueError("place_name이 비어있습니다.")
         return v
+
+    @field_validator("duration_min", mode="before")
+    @classmethod
+    def _clamp_duration(cls, v):
+        # WHY: 범위 밖 체류시간 하나로 코스 전체가 폴백되던 것을 clamp로 흡수
+        # (Guardrails ③ 부분 재생성 철학). 10곳 중 1곳만 값이 이상해도
+        # 예전엔 course_generator가 ValidationError를 잡아 전체를 "죄송해요" 1줄로 강등했다.
+        if v is None:
+            return v
+        try:
+            v = int(v)
+        except (TypeError, ValueError):
+            return v   # 잘못된 타입은 pydantic 기본 검증에 맡김
+        return max(10, min(480, v))   # 범위 밖은 clamp (600→480, 5→10)
 
 
 class StreamingCourseModel(BaseModel):
@@ -78,8 +90,12 @@ class StreamingCourseModel(BaseModel):
     def check_sequence_sequential(
         cls, places: list[RecommendedPlaceModel]
     ) -> list[RecommendedPlaceModel]:
-        """visit_sequence가 1, 2, 3... 순서인지 확인"""
-        for i, place in enumerate(places, start=1):
+        """visit_sequence 값 기준 1, 2, 3... 연속성 확인 (배열 순서는 무관)"""
+        # WHY: 배열 순서가 아니라 visit_sequence 값 기준 정렬 검증 —
+        # 순서 맞는데 배열만 섞인 정상 출력이 폴백되지 않게.
+        # 단 중복(1,2,2)·gap(1,2,4)은 여전히 거부 (진짜 malformation).
+        ordered = sorted(places, key=lambda p: p.visit_sequence)
+        for i, place in enumerate(ordered, start=1):
             if place.visit_sequence != i:
                 # place_name이 None일 수 있으므로 안전하게 처리
                 name = place.place_name or f"place_id={place.place_id}"
@@ -87,4 +103,4 @@ class StreamingCourseModel(BaseModel):
                     f"visit_sequence가 연속적이지 않습니다: "
                     f"예상 {i}, 실제 {place.visit_sequence} ({name})"
                 )
-        return places
+        return ordered   # 정렬된 리스트 반환 → 다운스트림이 순서대로 받음

@@ -13,7 +13,7 @@ import time
 from pydantic import ValidationError
 
 from traveler.core.llm_client import MODEL, get_client
-from traveler.core.prompt import build_context_message, get_system_prompt
+from traveler.core.prompt import build_context_message, get_system_prompt, normalize_travel_mode
 from traveler.rag.types import ContextData
 from traveler.validation.schema import RecommendedPlaceModel, StreamingCourseModel
 
@@ -57,6 +57,7 @@ async def generate_course(
       - stream=True: GPT 토큰을 기다리지 않고 생성 즉시 받음
       - full_text에 누적 → 스트리밍 완료 후 Pydantic 일괄 검증
     """
+    travel_mode = normalize_travel_mode(travel_mode)
     # WHY build_context_message? TravelRequest가 아닌 ContextData를 프롬프트로 변환.
     # 이 함수가 두 팀의 경계면(이수연 ↔ 정훈)을 이어주는 브릿지 역할.
     user_message = build_context_message(ctx)

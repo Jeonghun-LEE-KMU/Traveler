@@ -159,6 +159,19 @@ def test_parse_overcast():
     assert result == "흐림"
 
 
+def test_parse_empty_items():
+    """
+    items가 빈 리스트([])면 "정보없음" 반환 (Graceful Degradation).
+
+    WHY 이 테스트가 필요한가:
+      forecast_times = sorted({...})가 빈 집합이 되면 forecast_times[-1]에서
+      IndexError가 터진다. 예보 item이 하나도 없는 무자료 응답 상황을
+      재현해 가드가 실제로 막아주는지 확인한다.
+    """
+    result = _parse_weather_code([])
+    assert result == _FALLBACK
+
+
 # ── Test 8~11: get_weather (비동기 + httpx Mock) ─────────────────────────────
 
 async def test_get_weather_no_api_key(monkeypatch):
@@ -211,6 +224,40 @@ async def test_get_weather_timeout(monkeypatch):
     mock_cm = AsyncMock()
     mock_cm.__aenter__ = AsyncMock(return_value=mock_client)
     mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("traveler.api.weather.httpx.AsyncClient", return_value=mock_cm):
+        result = await get_weather(35.8562, 129.2247)
+
+    assert result == _FALLBACK
+
+
+async def test_get_weather_empty_item_list(monkeypatch):
+    """
+    기상청 API가 item: [] (빈 예보 리스트)로 응답하면 "정보없음" 반환.
+
+    WHY: 예보 데이터가 아직 갱신되지 않은 시간대 등에서 item이 빈 리스트로
+    올 수 있다. _parse_weather_code의 IndexError 가드가 get_weather 전체
+    흐름에서도 정상 작동하는지 확인한다.
+    """
+    monkeypatch.setenv("WEATHER_API_KEY", "test_key")
+    mock_cm = make_mock_http_client({"response": {"body": {"items": {"item": []}}}})
+
+    with patch("traveler.api.weather.httpx.AsyncClient", return_value=mock_cm):
+        result = await get_weather(35.8562, 129.2247)
+
+    assert result == _FALLBACK
+
+
+async def test_get_weather_empty_items_string(monkeypatch):
+    """
+    기상청 API가 items: "" (빈 문자열, data.go.kr 무자료 응답)로 응답하면 "정보없음" 반환.
+
+    WHY: data.go.kr은 해당 지역/시간에 데이터가 없으면 items를 딕셔너리가
+    아닌 빈 문자열로 내려주는 경우가 있다. "" ["item"] 접근 시 TypeError가
+    나는데, 이 except 확장이 실제로 이를 흡수하는지 확인한다.
+    """
+    monkeypatch.setenv("WEATHER_API_KEY", "test_key")
+    mock_cm = make_mock_http_client({"response": {"body": {"items": ""}}})
 
     with patch("traveler.api.weather.httpx.AsyncClient", return_value=mock_cm):
         result = await get_weather(35.8562, 129.2247)
