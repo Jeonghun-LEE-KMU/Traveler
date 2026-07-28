@@ -25,6 +25,7 @@ from config import (
     MDCLTURSMSERVICE_API_KEY,
 )
 from traveler.api.weather import get_weather
+from traveler.core.prompt import get_system_prompt, build_context_message
 from traveler.rag.retriever import get_context as rag_get_context
 from traveler.rag.session import (
     add_visited,
@@ -35,9 +36,9 @@ from traveler.rag.session import (
 )
 from traveler.rag.preference import (
     extract_prefs_from_message,
-    build_prefs_context,
     build_visited_context,
 )
+from traveler.validation.schema import StreamingCourseModel
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,12 @@ RADIUS_BY_MODE = {
     "nearby":   30.0,
     "longdist": 150.0,
     "remote":   300.0,
+}
+
+MODE_TO_KR = {
+    "nearby":   "근교",
+    "longdist": "장거리",
+    "remote":   "타지",
 }
 
 
@@ -98,10 +105,10 @@ async def chat_endpoint(
             prefs = {**prefs, **new_prefs}
 
         visited_context = build_visited_context(visited)
-        prefs_context = build_prefs_context(prefs)
 
+        mode_kr = MODE_TO_KR.get(mode, "타지")
         radius_km = RADIUS_BY_MODE[mode]
-        context_data, spots_context = await asyncio.to_thread(
+        context_data, _ = await asyncio.to_thread(
             rag_get_context,
             user_message,
             lat,
@@ -113,39 +120,17 @@ async def chat_endpoint(
         )
         candidate_spots = context_data.candidate_spots
 
-        context_sections = [
-            "[실시간 환경 데이터]\n"
-            "- 현재 차량 GPS: 위도 {lat}, 경도 {lon}\n"
-            "- 현재 날씨: {weather}".format(lat=lat, lon=lon, weather=weather),
-        ]
-
-        if visited_context:
-            context_sections.append(visited_context)
-        if prefs_context:
-            context_sections.append(prefs_context)
-        if spots_context:
-            context_sections.append(spots_context)
-
-        integrated_context = "\n\n".join(context_sections)
-
         def event_generator():
-            llm = ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY, streaming=True)
+            llm = ChatOpenAI(
+                model="gpt-4o",
+                api_key=OPENAI_API_KEY,
+                streaming=True,
+                model_kwargs={"response_format": {"type": "json_object"}},
+            )
 
+            # 정훈 system prompt (모드별 JSON 출력 강제)
             rag_prompt = ChatPromptTemplate.from_messages([
-                ("system",
-                 "당신은 모빌리티 전문 트래블 큐레이터 [TRAVELER]입니다.\n"
-                 "아래 [통합 관광지 DB 컨텍스트]의 정보만을 바탕하여 "
-                 "유저에게 드라이브 코스를 제안하세요.\n\n"
-                 "[날씨 규칙]\n"
-                 "- 날씨가 '비' 또는 '흐림'이면 실내 위주 코스로 구성하세요.\n"
-                 "- 날씨가 '맑음'이면 실외 명소를 적극 포함하세요.\n"
-                 "- 날씨가 '정보없음'이면 날씨 언급 없이 일반 코스를 제안하세요.\n\n"
-                 "[방문 이력 규칙]\n"
-                 "- '이미 방문한 장소' 목록의 place_id는 추천하지 마세요.\n\n"
-                 "[개인화 규칙]\n"
-                 "- '누적 여행 선호도'가 있으면 반영하되, 이번 요청 내용이 최우선입니다.\n\n"
-                 "[통합 관광지 DB 컨텍스트]\n"
-                 "{db_context}\n"),
+                ("system", get_system_prompt(mode_kr)),
                 MessagesPlaceholder(variable_name="chat_history"),
                 ("human", "{user_message}"),
             ])
@@ -159,19 +144,38 @@ async def chat_endpoint(
                 history_messages_key="chat_history",
             )
 
+            # build_context_message로 user 메시지 조립, 방문 이력 추가
+            context_message = build_context_message(context_data)
+            if visited_context:
+                context_message += "\n\n" + visited_context
+
+            # 스트리밍하면서 full_text 누적
+            full_text = ""
             for chunk_text in final_rag_engine.stream(
-                    {"db_context": integrated_context, "user_message": user_message},
+                    {"user_message": context_message},
                     config={"configurable": {"session_id": session_id}},
             ):
+                full_text += chunk_text
                 yield "data: {}\n\n".format(json.dumps({
                     "bot_message": chunk_text,
                     "recommended_places": [],
                 }, ensure_ascii=False))
 
-            recommended = [
-                {"place_id": s.place_id, "visit_sequence": i + 1}
-                for i, s in enumerate(candidate_spots)
-            ]
+            # 스트리밍 완료 후 Pydantic 검증
+            try:
+                validated = StreamingCourseModel.model_validate_json(full_text)
+                recommended = [
+                    {"place_id": p.place_id, "visit_sequence": p.visit_sequence}
+                    for p in validated.recommended_places
+                ]
+                logger.info("[Chat] 검증 성공: %d개 장소", len(recommended))
+            except Exception as e:
+                logger.warning("[Chat] 검증 실패, Pinecone fallback 사용: %s | full_text[:200]=%s", e, full_text[:200])
+                recommended = [
+                    {"place_id": s.place_id, "visit_sequence": i + 1}
+                    for i, s in enumerate(candidate_spots)
+                ]
+
             yield "data: {}\n\n".format(json.dumps({
                 "bot_message": "",
                 "recommended_places": recommended,
