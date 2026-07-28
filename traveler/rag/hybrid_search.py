@@ -66,6 +66,37 @@ load_dotenv()
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "places.db"
 DENSE_CANDIDATE_K = 200
 
+_openai_client: OpenAI | None = None
+_pinecone_index = None
+
+
+def get_openai_client() -> OpenAI:
+    """OpenAI client를 프로세스 내에서 재사용한다."""
+    global _openai_client
+    if _openai_client is None:
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if not openai_key:
+            raise RuntimeError(
+                "OPENAI_API_KEY 환경변수가 설정되지 않았습니다. "
+                ".env 파일을 확인하거나 환경변수를 직접 설정하세요."
+            )
+        _openai_client = OpenAI(api_key=openai_key)
+    return _openai_client
+
+
+def get_pinecone_index():
+    """Pinecone index handle을 프로세스 내에서 재사용한다."""
+    global _pinecone_index
+    if _pinecone_index is None:
+        pinecone_key = os.getenv("PINECONE_API_KEY")
+        if not pinecone_key:
+            raise RuntimeError(
+                "PINECONE_API_KEY 환경변수가 설정되지 않았습니다. "
+                ".env 파일을 확인하거나 환경변수를 직접 설정하세요."
+            )
+        _pinecone_index = Pinecone(api_key=pinecone_key).Index(INDEX_NAME)
+    return _pinecone_index
+
 REGION_AREA_CODES = {
     "서울": "1",
     "인천": "2",
@@ -278,7 +309,7 @@ def row_text(row: dict) -> str:
 
 def is_indoor(row: dict) -> bool:
     content_type_id = str(row.get("content_type_id") or "")
-    if content_type_id in {"14", "39"}:
+    if content_type_id in {"14", "38", "39"}:
         return True
 
     name = str(row.get("name") or "")
@@ -490,12 +521,16 @@ def search_places(
     현재 가중치:
       semantic 65% + keyword 20% + preference 10% + iconic 5%
     """
-    openai_key = os.getenv("OPENAI_API_KEY")
-    pinecone_key = os.getenv("PINECONE_API_KEY")
-    if not openai_key or not pinecone_key:
-        raise RuntimeError(
-            ".env에 OPENAI_API_KEY와 PINECONE_API_KEY가 필요합니다."
-        )
+    # 기존 API key 확인 코드:
+    #   openai_key = os.getenv("OPENAI_API_KEY")
+    #   pinecone_key = os.getenv("PINECONE_API_KEY")
+    #   if not openai_key or not pinecone_key:
+    #       raise RuntimeError(
+    #           ".env에 OPENAI_API_KEY와 PINECONE_API_KEY가 필요합니다."
+    #       )
+    #
+    # 현재는 get_openai_client(), get_pinecone_index()에서 각각
+    # 필요한 환경변수를 검증하므로 search_places() 내부의 중복 검사는 비활성화한다.
 
     db_path = Path(db_path)
     if not db_path.exists():
@@ -508,8 +543,8 @@ def search_places(
         else detect_content_types(user_query)
     )
 
-    openai_client = OpenAI(api_key=openai_key)
-    index = Pinecone(api_key=pinecone_key).Index(INDEX_NAME)
+    openai_client = get_openai_client()
+    index = get_pinecone_index()
     query_vector = embed_texts(openai_client, [user_query])[0]
     dense_response = index.query(
         vector=query_vector,
