@@ -121,7 +121,12 @@ async def chat_endpoint(
         candidate_spots = context_data.candidate_spots
 
         def event_generator():
-            llm = ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY, streaming=True)
+            llm = ChatOpenAI(
+                model="gpt-4o",
+                api_key=OPENAI_API_KEY,
+                streaming=True,
+                model_kwargs={"response_format": {"type": "json_object"}},
+            )
 
             # 정훈 system prompt (모드별 JSON 출력 강제)
             rag_prompt = ChatPromptTemplate.from_messages([
@@ -165,7 +170,7 @@ async def chat_endpoint(
                 ]
                 logger.info("[Chat] 검증 성공: %d개 장소", len(recommended))
             except Exception as e:
-                logger.warning("[Chat] 검증 실패, Pinecone fallback 사용: %s", e)
+                logger.warning("[Chat] 검증 실패, Pinecone fallback 사용: %s | full_text[:200]=%s", e, full_text[:200])
                 recommended = [
                     {"place_id": s.place_id, "visit_sequence": i + 1}
                     for i, s in enumerate(candidate_spots)
