@@ -7,6 +7,11 @@ traveler/core/prompt.py 단위 테스트.
   - build_context_message(): user_query 구획화(프롬프트 인젝션 하드닝)
 """
 
+import json
+import re
+
+import pytest
+
 from traveler.core import prompt as prompt_module
 from traveler.core.prompt import (
     MODE_WEIGHTS,
@@ -18,6 +23,7 @@ from traveler.core.prompt import (
     normalize_travel_mode,
 )
 from traveler.rag.types import ContextData, SpotCandidate
+from traveler.validation.schema import StreamingCourseModel
 
 _TRAVEL_MODES = {"근교", "타지", "장거리"}
 _WEIGHT_LABELS = {
@@ -203,3 +209,75 @@ def test_build_context_message_contains_prompt_injection_attempt_within_section_
     assert start_idx < injection_idx < end_idx
     # candidate_spots 제약 문장이 인젝션 시도와 무관하게 그대로 출력에 존재해야 함
     assert "place_id는 반드시 아래 목록의 값만 사용" in message
+
+
+# ── Sprint 4: v1 피드백 기반 CoT 보완 ───────────────────────────────────────
+
+def test_sprint4_prompt_defines_constraint_conflict_priority():
+    prompt = get_system_prompt("근교")
+
+    assert "[제약 충돌 우선순위]" in prompt
+    assert "안전" in prompt
+    assert "사용자 명시 조건" in prompt
+    assert "시간·동선" in prompt
+    assert "모드별 장소 구성 비율" in prompt
+
+
+def test_sprint4_prompt_forbids_ungrounded_place_generation():
+    prompt = get_system_prompt("타지")
+
+    assert "후보 장소 목록 밖의 장소를 새로 만들지 마십시오" in prompt
+    assert "place_id" in prompt
+
+
+def test_sprint4_prompt_requires_time_budget_check():
+    prompt = get_system_prompt("장거리")
+
+    assert "총 체류시간과 이동시간의 합" in prompt
+    assert "가용 시간" in prompt
+
+
+# ── Sprint 4: 모드별 Few-shot 3/2/3 ─────────────────────────────────────────
+
+def test_nearby_prompt_contains_only_three_nearby_few_shots():
+    prompt = get_system_prompt("근교")
+
+    assert prompt.count("[근교 Few-shot ") == 3
+    assert "[장거리 Few-shot " not in prompt
+    assert "[타지 Few-shot " not in prompt
+
+
+def test_longdrive_prompt_contains_only_two_longdrive_few_shots():
+    prompt = get_system_prompt("장거리")
+
+    assert prompt.count("[장거리 Few-shot ") == 2
+    assert "[근교 Few-shot " not in prompt
+    assert "[타지 Few-shot " not in prompt
+
+
+def test_tourist_prompt_contains_only_three_tourist_few_shots():
+    prompt = get_system_prompt("타지")
+
+    assert prompt.count("[타지 Few-shot ") == 3
+    assert "[근교 Few-shot " not in prompt
+    assert "[장거리 Few-shot " not in prompt
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_json_examples"),
+    [
+        ("근교", 7),   # 출력 계약 1 + 공통 3 + 근교 3
+        ("장거리", 6),  # 출력 계약 1 + 공통 3 + 장거리 2
+        ("타지", 7),   # 출력 계약 1 + 공통 3 + 타지 3
+    ],
+)
+def test_all_few_shot_json_examples_match_course_schema(
+    mode,
+    expected_json_examples,
+):
+    prompt = get_system_prompt(mode)
+    json_blocks = re.findall(r"```json\s*(.*?)\s*```", prompt, flags=re.DOTALL)
+
+    assert len(json_blocks) == expected_json_examples
+    for block in json_blocks:
+        StreamingCourseModel.model_validate(json.loads(block))
