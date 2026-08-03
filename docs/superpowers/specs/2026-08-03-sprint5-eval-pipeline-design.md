@@ -235,8 +235,10 @@ class StructuralMetrics(BaseModel):
     time_budget_ok: bool
     passed: bool   # 위 전부 AND → judge 게이트
 
-def measure(case: GoldenCase, raw_output: str) -> StructuralMetrics: ...
+def measure(ctx: ContextData, expectations: dict, raw_output: str) -> StructuralMetrics: ...
 ```
+
+`case: GoldenCase`가 아니라 `ctx`+`expectations`를 직접 받는 이유(구현 중 조정) — T3는 T1(`eval/dataset.py`의 `GoldenCase`)에 완전 독립이라고 명시했는데, `GoldenCase`를 시그니처에 넣으면 그 독립성이 깨진다. `measure()`가 실제로 필요한 건 `ctx.candidate_spots`/`ctx.duration_hours`와 `expectations` 딕셔너리뿐이라 이 둘만 받는 게 §7 의존성 매트릭스와 일치한다.
 
 `raw_output: str`을 받는 이유 — JSON 파싱 실패 자체가 측정 대상이므로 파싱된 객체가 아니라 원문 문자열을 받아야 한다.
 
