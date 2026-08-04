@@ -9,6 +9,10 @@ RAG 엔지니어(이수연) ↔ LLM 엔지니어(정훈) 인터페이스 계약.
 
 [변경 시 규칙]
 이 파일을 수정하면 반드시 양측(이수연, 정훈) 모두에게 알려야 한다.
+
+[고지 — 2026-08-04]
+generate_course()에 temperature 키워드 인자 추가됨 — eval 파이프라인 재현성용,
+기본값 0.3 유지, 프로덕션 영향 없음.
 """
 
 from dataclasses import dataclass, field

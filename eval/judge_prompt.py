@@ -21,6 +21,11 @@ halo effect 완화 장치 2개(JUDGE_SYSTEM_PROMPT에 반영):
 from traveler.rag.types import ContextData
 from traveler.validation.schema import StreamingCourseModel
 
+# WHY 상수로 노출하는가(Sprint 5 Task 4): 파일 상단 버전 헤더 주석("# version: v1.0")은
+# import해서 report.json에 찍을 수 없다. traveler/core/prompt.py의 PROMPT_VERSION과
+# 동일한 SSOT 패턴 — eval/run_judge.py가 이 상수를 import해 judge_prompt_version으로 기록한다.
+JUDGE_PROMPT_VERSION = "v1.0"
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # JUDGE_SYSTEM_PROMPT — 5축 anchor rubric
 #

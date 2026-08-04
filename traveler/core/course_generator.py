@@ -43,12 +43,17 @@ def _build_fallback(ctx: ContextData) -> StreamingCourseModel:
 async def generate_course(
     ctx: ContextData,
     travel_mode: str = "타지",
+    *,
+    temperature: float = 0.3,
 ) -> StreamingCourseModel:
     """
     여행 컨텍스트를 받아 GPT-4o 스트리밍으로 코스를 생성하고 Pydantic으로 검증한다.
 
     # INPUT:  ContextData — 이수연의 RAG 파이프라인이 채워서 전달하는 컨텍스트
     #         travel_mode — Router(Sprint 6)가 감지한 여행 유형 ("근교"|"타지"|"장거리")
+    #         temperature — keyword-only, 기본값 0.3(프로덕션 동작 무변경).
+    #           Sprint 5 eval 파이프라인(eval/run_judge.py)이 재현성 확보를 위해
+    #           0을 명시적으로 전달하는 용도로 노출됐다(D3, 설계 spec §5.2).
     # OUTPUT: StreamingCourseModel — Pydantic 검증 완료된 코스 객체
     # COST:   GPT-4o 기준 입력 $2.5/1M, 출력 $10/1M 토큰
     # ⚠️ 주의: travel_mode는 Sprint 6 Router 구현 전까지 호출부에서 직접 전달
@@ -76,7 +81,7 @@ async def generate_course(
                 {"role": "user", "content": user_message},
             ],
             response_format={"type": "json_object"},   # JSON만 반환
-            temperature=0.3,
+            temperature=temperature,
             stream=True,
             stream_options={"include_usage": True},    # 마지막 청크에 usage 포함
         )

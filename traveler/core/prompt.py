@@ -56,6 +56,12 @@ class TravelRequest:
 # tested_on: Sprint 4 prompt contract tests (2026-07-29)
 # ─────────────────────────────────────────────────────────────────────────────
 
+# WHY 상수로 노출하는가(Sprint 5 Task 4): 지금까지 "v2.0"은 위 버전 헤더 주석에만
+# 있었다. eval/run_judge.py의 report.json이 어떤 프롬프트 버전으로 회귀 테스트를
+# 돌렸는지 찍어야 하는데, 주석은 import해서 쓸 수 없다. MODE_WEIGHTS와 동일한
+# SSOT 패턴 — 버전 값의 진실은 이 상수 하나에만 있고, 리포트는 이걸 import해서 쓴다.
+PROMPT_VERSION = "v2.0"
+
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # [BLOCK 0] 모드별 장소 구성 비율 — SSOT (Single Source of Truth)
