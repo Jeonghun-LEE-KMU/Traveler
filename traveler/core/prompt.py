@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Optional
 
-from traveler.core.season import get_season
+from traveler.core.season_context import FestivalInfo, build_season_context
 from traveler.rag.types import ContextData
 
 logger = logging.getLogger(__name__)
@@ -137,6 +137,7 @@ _COMMON_BASE = """\
 
 날씨가 "비" 또는 "흐림"이면 실내 위주로 구성하십시오.
 계절에 따라 특화 활동을 우선 고려하십시오 (예: 여름→물놀이·빙수, 겨울→온천·실내 액티비티).
+축제·행사 정보가 제공되면 계절 특화 추천에 우선 반영하십시오.
 
 [출력 형식 — 스트리밍 최적화]
 반드시 아래 JSON 객체 하나로만 응답하십시오.
@@ -539,7 +540,11 @@ def get_system_prompt(mode: str) -> str:
 #   새 코드는 build_context_message()를 사용할 것.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-def build_context_message(ctx: ContextData, today: date | None = None) -> str:
+def build_context_message(
+    ctx: ContextData,
+    today: date | None = None,
+    festivals: list["FestivalInfo"] | None = None,
+) -> str:
     """
     ContextData 객체를 LLM에 보낼 user 메시지 문자열로 변환한다.
 
@@ -570,7 +575,7 @@ def build_context_message(ctx: ContextData, today: date | None = None) -> str:
         "[사용자 요청 끝]",
         f"현재 위치: 위도 {ctx.current_lat}, 경도 {ctx.current_lng}",
         f"현재 날씨: {ctx.weather}",
-        f"현재 계절: {get_season(today)}",
+        build_season_context(today, festivals),
         f"가용 시간: {ctx.duration_hours}시간",
         f"이동 수단: {ctx.transport}",
     ]
