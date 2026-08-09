@@ -11,8 +11,8 @@ def _ctx(*, duration_hours: int = 4) -> ContextData:
         current_lng=129.2,
         weather="맑음",
         candidate_spots=[
-            SpotCandidate(place_id=1, place_name="A", category="관광", distance_min=10.0, indoor=True),
-            SpotCandidate(place_id=2, place_name="B", category="음식", distance_min=15.0, indoor=False),
+            SpotCandidate(place_id="1", place_name="A", category="관광", distance_min=10.0, indoor=True),
+            SpotCandidate(place_id="2", place_name="B", category="음식", distance_min=15.0, indoor=False),
         ],
         duration_hours=duration_hours,
     )
@@ -24,7 +24,7 @@ def _course_json(recommended_places: list[dict], bot_message: str = "좋은 코�
 
 def test_normal_course_passes_all_checks():
     output = _course_json(
-        [{"place_id": 1, "visit_sequence": 1, "place_name": "A", "duration_min": 60}]
+        [{"place_id": "1", "visit_sequence": 1, "place_name": "A", "duration_min": 60}]
     )
     metrics = measure(_ctx(), {"expect_places_range": [1, 3]}, output)
 
@@ -47,7 +47,7 @@ def test_broken_json_fails_json_valid_only():
 def test_eleven_places_rejected_by_schema():
     # RecommendedPlaceModel의 max_length=10 제약으로 스키마 검증 단계에서 걸린다.
     places = [
-        {"place_id": 1, "visit_sequence": i, "place_name": "A", "duration_min": 10}
+        {"place_id": "1", "visit_sequence": i, "place_name": "A", "duration_min": 10}
         for i in range(1, 12)
     ]
     metrics = measure(_ctx(), {"expect_places_range": [1, 10]}, _course_json(places))
@@ -58,20 +58,20 @@ def test_eleven_places_rejected_by_schema():
 
 def test_hallucinated_place_id_fails_grounded_only():
     output = _course_json(
-        [{"place_id": 99, "visit_sequence": 1, "place_name": "없는곳", "duration_min": 30}]
+        [{"place_id": "99", "visit_sequence": 1, "place_name": "없는곳", "duration_min": 30}]
     )
     metrics = measure(_ctx(), {"expect_places_range": [1, 3]}, output)
 
     assert metrics.json_valid is True
     assert metrics.grounded is False
-    assert metrics.hallucinated_ids == [99]
+    assert metrics.hallucinated_ids == ["99"]
     assert metrics.passed is False
 
 
 def test_time_budget_exceeded_fails_time_budget_only():
     # duration_hours=1 → 예산 72분(1*60*1.2). duration_min 400 + 이동 20분(10*2) 초과.
     output = _course_json(
-        [{"place_id": 1, "visit_sequence": 1, "place_name": "A", "duration_min": 400}]
+        [{"place_id": "1", "visit_sequence": 1, "place_name": "A", "duration_min": 400}]
     )
     metrics = measure(_ctx(duration_hours=1), {"expect_places_range": [1, 3]}, output)
 
@@ -83,7 +83,7 @@ def test_time_budget_exceeded_fails_time_budget_only():
 
 def test_fallback_message_detected():
     output = _course_json(
-        [{"place_id": 1, "visit_sequence": 1}],
+        [{"place_id": "1", "visit_sequence": 1}],
         bot_message=FALLBACK_BOT_MESSAGE,
     )
     metrics = measure(_ctx(), {"expect_places_range": [1, 3]}, output)

@@ -32,7 +32,9 @@ class SpotCandidate:
       - 이 후보 목록을 프롬프트에 주입
       - GPT가 후보 중에서 골라 visit_sequence 부여
     """
-    place_id: int        # SQLite PK — 정훈 출력의 place_id와 1:1 매핑
+    place_id: str        # content_id 문자열 — 정훈 출력의 place_id와 1:1 매핑
+                          # (2026-08-09 변경: SQLite PK int는 재시작마다 hash()
+                          #  값이 바뀌는 문제가 있어 content_id 문자열로 통일 — Issue #15, 이수연 합의)
     place_name: str      # 장소명 (예: "불국사")
     category: str        # 카테고리 (예: "관광", "음식", "체험", "휴식")
     distance_min: float  # 현재 GPS 기준 Tmap 이동 시간 (분)

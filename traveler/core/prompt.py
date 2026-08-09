@@ -13,6 +13,11 @@ Constraint-Aware CoT 프롬프트 모듈.
   - 후보 장소 grounding, 입력 우선순위, 제약 검토 절차를 명문화
   - 모드별 Few-shot을 해당 모드 프롬프트에만 추가
   - 추론 과정은 노출하지 않고 JSON 객체만 출력하도록 강화
+
+[v2.1 변경사항 — 2026-08-09]
+  - 시간 제약 CoT에서 "이동시간" 검토 지시 제거 (Issue #15, 이수연 합의).
+    장소 간 실제 이동시간 데이터(Tmap)가 없어 GPT가 근거 없이 추정해 왔음.
+    Tmap 연동 전까지는 체류시간(duration_min) 합계만 가용 시간과 대조한다.
 """
 
 import logging
@@ -48,19 +53,19 @@ class TravelRequest:
 
 # ─── 버전 헤더 ──────────────────────────────────────────────────────────────
 # prompt_id: travel_course_generator
-# version: v2.0
-# updated: 2026-07-29
-# changed: PR11 피드백 반영 — 후보 grounding·입력 우선순위·제약 검토 강화,
-#          모드별 Few-shot(근교 3/장거리 2/타지 3) 추가, JSON-only 명문화
+# version: v2.1
+# updated: 2026-08-09
+# changed: place_id 예시를 SQLite PK(int)에서 content_id(문자열)로 교체,
+#          시간 제약 CoT에서 근거 없는 "이동시간" 검토 지시 제거 (Issue #15)
 # author: 이정훈
-# tested_on: Sprint 4 prompt contract tests (2026-07-29)
+# tested_on: Sprint 4 prompt contract tests (2026-07-29) — Sprint5 재검증 대기
 # ─────────────────────────────────────────────────────────────────────────────
 
 # WHY 상수로 노출하는가(Sprint 5 Task 4): 지금까지 "v2.0"은 위 버전 헤더 주석에만
 # 있었다. eval/run_judge.py의 report.json이 어떤 프롬프트 버전으로 회귀 테스트를
 # 돌렸는지 찍어야 하는데, 주석은 import해서 쓸 수 없다. MODE_WEIGHTS와 동일한
 # SSOT 패턴 — 버전 값의 진실은 이 상수 하나에만 있고, 리포트는 이걸 import해서 쓴다.
-PROMPT_VERSION = "v2.0"
+PROMPT_VERSION = "v2.1"
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -133,7 +138,7 @@ _COMMON_BASE = """\
 [필수 내부 검토 — Constraint-Aware CoT v2]
 최종 답변을 만들기 전에 다음 순서로 내부적으로만 점검하십시오.
 1. 후보 grounding: 후보 목록이 있으면 장소와 place_id를 반드시 그 목록에서만 선택
-2. 시간 제약: 총 체류시간과 이동시간의 합이 가용 시간을 넘지 않는지 확인
+2. 시간 제약: 총 체류시간이 가용 시간을 넘지 않는지 확인
 3. 날씨·계절 제약: 실내/실외 적합성과 계절 활동 가능 여부 확인
 4. 동행자 제약: 유아·고령자·반려동물·혼자·커플 등 동행 특성에 적합한지 확인
 5. 동선·이동 제약: 이동 수단, 이동 반경, 방문 순서가 현실적인지 확인
@@ -159,7 +164,7 @@ _COMMON_BASE = """\
   "bot_message": "사용자에게 전달할 큐레이터 멘트 (2~3문장, 여행 감성 포함)",
   "recommended_places": [
     {
-      "place_id": 1,
+      "place_id": "1",
       "place_name": "장소명",
       "visit_sequence": 1,
       "duration_min": 60
@@ -250,9 +255,9 @@ _FEW_SHOT_SECTION = """
 {
   "bot_message": "신라의 감성이 살아있는 경주에서 두 분만의 고즈넉한 시간을 보내세요. 첨성대의 열린 하늘 아래 시작해 황리단길 카페에서 여유를 찾고, 불국사의 석양으로 마무리하는 5시간 코스입니다.",
   "recommended_places": [
-    {"place_id": 1, "place_name": "첨성대", "visit_sequence": 1, "duration_min": 40},
-    {"place_id": 2, "place_name": "황리단길 카페", "visit_sequence": 2, "duration_min": 60},
-    {"place_id": 3, "place_name": "불국사", "visit_sequence": 3, "duration_min": 90}
+    {"place_id": "1", "place_name": "첨성대", "visit_sequence": 1, "duration_min": 40},
+    {"place_id": "2", "place_name": "황리단길 카페", "visit_sequence": 2, "duration_min": 60},
+    {"place_id": "3", "place_name": "불국사", "visit_sequence": 3, "duration_min": 90}
   ]
 }
 ```
@@ -264,9 +269,9 @@ _FEW_SHOT_SECTION = """
 {
   "bot_message": "비 내리는 제주도, 오히려 실내에서 제주의 감성을 더 깊이 느낄 수 있는 날이에요. 넥슨컴퓨터박물관의 독특한 전시로 시작해 제주 현대미술관에서 감각을 깨우고, 애월 감성 카페에서 빗소리를 들으며 마무리하는 코스입니다.",
   "recommended_places": [
-    {"place_id": 4, "place_name": "넥슨컴퓨터박물관", "visit_sequence": 1, "duration_min": 90},
-    {"place_id": 5, "place_name": "제주 현대미술관", "visit_sequence": 2, "duration_min": 80},
-    {"place_id": 6, "place_name": "애월 감성 카페", "visit_sequence": 3, "duration_min": 60}
+    {"place_id": "4", "place_name": "넥슨컴퓨터박물관", "visit_sequence": 1, "duration_min": 90},
+    {"place_id": "5", "place_name": "제주 현대미술관", "visit_sequence": 2, "duration_min": 80},
+    {"place_id": "6", "place_name": "애월 감성 카페", "visit_sequence": 3, "duration_min": 60}
   ]
 }
 ```
@@ -278,9 +283,9 @@ _FEW_SHOT_SECTION = """
 {
   "bot_message": "아이와 함께하는 부산 나들이, 온 가족이 신나게 즐길 수 있는 코스예요. 어린이 체험 공간이 가득한 아쿠아리움에서 시작해 광안리 해변에서 바닷바람을 맞으며 뛰어놀고, 마지막은 감천문화마을에서 알록달록한 골목길 산책으로 마무리합니다.",
   "recommended_places": [
-    {"place_id": 7, "place_name": "부산 아쿠아리움", "visit_sequence": 1, "duration_min": 90},
-    {"place_id": 8, "place_name": "광안리 해수욕장", "visit_sequence": 2, "duration_min": 60},
-    {"place_id": 9, "place_name": "감천문화마을", "visit_sequence": 3, "duration_min": 70}
+    {"place_id": "7", "place_name": "부산 아쿠아리움", "visit_sequence": 1, "duration_min": 90},
+    {"place_id": "8", "place_name": "광안리 해수욕장", "visit_sequence": 2, "duration_min": 60},
+    {"place_id": "9", "place_name": "감천문화마을", "visit_sequence": 3, "duration_min": 70}
   ]
 }
 ```
@@ -301,8 +306,8 @@ _NEARBY_FEW_SHOT_SECTION = """
 {
   "bot_message": "익숙한 동네에서도 새롭게 느껴질 조용한 산책과 로컬 커피 코스예요.",
   "recommended_places": [
-    {"place_id": 101, "place_name": "호수 뒤편 산책로", "visit_sequence": 1, "duration_min": 50},
-    {"place_id": 102, "place_name": "로컬 로스터리", "visit_sequence": 2, "duration_min": 60}
+    {"place_id": "101", "place_name": "호수 뒤편 산책로", "visit_sequence": 1, "duration_min": 50},
+    {"place_id": "102", "place_name": "로컬 로스터리", "visit_sequence": 2, "duration_min": 60}
   ]
 }
 ```
@@ -314,8 +319,8 @@ _NEARBY_FEW_SHOT_SECTION = """
 {
   "bot_message": "비를 피해 책과 공예를 천천히 즐기는 가까운 실내 나들이로 구성했어요.",
   "recommended_places": [
-    {"place_id": 103, "place_name": "독립서점", "visit_sequence": 1, "duration_min": 70},
-    {"place_id": 104, "place_name": "공방 카페", "visit_sequence": 2, "duration_min": 90}
+    {"place_id": "103", "place_name": "독립서점", "visit_sequence": 1, "duration_min": 70},
+    {"place_id": "104", "place_name": "공방 카페", "visit_sequence": 2, "duration_min": 90}
   ]
 }
 ```
@@ -327,8 +332,8 @@ _NEARBY_FEW_SHOT_SECTION = """
 {
   "bot_message": "이미 가본 대표 명소 대신 생활감 있는 시장과 한적한 전망을 이어봤어요.",
   "recommended_places": [
-    {"place_id": 105, "place_name": "골목시장", "visit_sequence": 1, "duration_min": 60},
-    {"place_id": 106, "place_name": "하천 전망대", "visit_sequence": 2, "duration_min": 40}
+    {"place_id": "105", "place_name": "골목시장", "visit_sequence": 1, "duration_min": 60},
+    {"place_id": "106", "place_name": "하천 전망대", "visit_sequence": 2, "duration_min": 40}
   ]
 }
 ```
@@ -342,8 +347,8 @@ _LONGDRIVE_FEW_SHOT_SECTION = """
 {
   "bot_message": "이동 중에는 중간 휴게소에서 한 번 쉬고 주유한 뒤, 목적지에서는 박물관과 전통시장을 차례로 둘러보세요.",
   "recommended_places": [
-    {"place_id": 201, "place_name": "역사박물관", "visit_sequence": 1, "duration_min": 90},
-    {"place_id": 202, "place_name": "전통시장", "visit_sequence": 2, "duration_min": 70}
+    {"place_id": "201", "place_name": "역사박물관", "visit_sequence": 1, "duration_min": 90},
+    {"place_id": "202", "place_name": "전통시장", "visit_sequence": 2, "duration_min": 70}
   ]
 }
 ```
@@ -355,8 +360,8 @@ _LONGDRIVE_FEW_SHOT_SECTION = """
 {
   "bot_message": "긴 운전 뒤에는 가까운 전망대에서 바람을 쐬고 온천에서 피로를 푸는 여유로운 순서가 좋아요.",
   "recommended_places": [
-    {"place_id": 203, "place_name": "해안 전망대", "visit_sequence": 1, "duration_min": 40},
-    {"place_id": 204, "place_name": "온천", "visit_sequence": 2, "duration_min": 120}
+    {"place_id": "203", "place_name": "해안 전망대", "visit_sequence": 1, "duration_min": 40},
+    {"place_id": "204", "place_name": "온천", "visit_sequence": 2, "duration_min": 120}
   ]
 }
 ```
@@ -370,8 +375,8 @@ _TOURIST_FEW_SHOT_SECTION = """
 {
   "bot_message": "첫 방문에서 지역의 역사와 대표 음식을 함께 기억할 수 있는 핵심 코스예요.",
   "recommended_places": [
-    {"place_id": 301, "place_name": "성곽", "visit_sequence": 1, "duration_min": 90},
-    {"place_id": 302, "place_name": "향토음식 거리", "visit_sequence": 2, "duration_min": 70}
+    {"place_id": "301", "place_name": "성곽", "visit_sequence": 1, "duration_min": 90},
+    {"place_id": "302", "place_name": "향토음식 거리", "visit_sequence": 2, "duration_min": 70}
   ]
 }
 ```
@@ -383,8 +388,8 @@ _TOURIST_FEW_SHOT_SECTION = """
 {
   "bot_message": "지역을 대표하는 미술관과 골목의 오래된 찻집을 묶어 낯선 도시의 두 얼굴을 담았어요.",
   "recommended_places": [
-    {"place_id": 303, "place_name": "미술관", "visit_sequence": 1, "duration_min": 100},
-    {"place_id": 304, "place_name": "오래된 찻집", "visit_sequence": 2, "duration_min": 60}
+    {"place_id": "303", "place_name": "미술관", "visit_sequence": 1, "duration_min": 100},
+    {"place_id": "304", "place_name": "오래된 찻집", "visit_sequence": 2, "duration_min": 60}
   ]
 }
 ```
@@ -396,8 +401,8 @@ _TOURIST_FEW_SHOT_SECTION = """
 {
   "bot_message": "짧은 일정과 대중교통 이동을 고려해 서로 가까운 공원과 기록관만 골랐어요.",
   "recommended_places": [
-    {"place_id": 305, "place_name": "중앙공원", "visit_sequence": 1, "duration_min": 45},
-    {"place_id": 306, "place_name": "기록관", "visit_sequence": 2, "duration_min": 60}
+    {"place_id": "305", "place_name": "중앙공원", "visit_sequence": 1, "duration_min": 45},
+    {"place_id": "306", "place_name": "기록관", "visit_sequence": 2, "duration_min": 60}
   ]
 }
 ```

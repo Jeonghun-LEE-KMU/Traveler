@@ -29,7 +29,7 @@ def _make_context(user_query: str = "분위기 좋은 곳 추천") -> ContextDat
         weather="맑음",
         candidate_spots=[
             SpotCandidate(
-                place_id=1,
+                place_id="1",
                 place_name="불국사",
                 category="관광",
                 distance_min=15.0,

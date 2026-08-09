@@ -28,7 +28,7 @@ class StructuralMetrics(BaseModel):
     place_count: int
     place_count_ok: bool
     grounded: bool
-    hallucinated_ids: list[int]
+    hallucinated_ids: list[str]
     estimated_total_min: int
     time_budget_ok: bool
     passed: bool

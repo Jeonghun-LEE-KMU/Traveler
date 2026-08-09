@@ -27,10 +27,10 @@ def _build_fallback(ctx: ContextData) -> StreamingCourseModel:
 
     # WHY: 파싱이 깨져도 generate_course()는 항상 유효한 StreamingCourseModel을
     # 반환해야 한다(Graceful Degradation). candidate_spots가 있으면 그중
-    # 첫 번째 place_id를 쓰고, 없으면 1을 쓴다(recommended_places는 min_length=1).
+    # 첫 번째 place_id를 쓰고, 없으면 "1"을 쓴다(recommended_places는 min_length=1).
     """
     fallback_place_id = (
-        ctx.candidate_spots[0].place_id if ctx.candidate_spots else 1
+        ctx.candidate_spots[0].place_id if ctx.candidate_spots else "1"
     )
     return StreamingCourseModel(
         bot_message="죄송해요, 지금 코스를 만드는 데 문제가 있었어요. 잠시 후 다시 시도해주세요.",

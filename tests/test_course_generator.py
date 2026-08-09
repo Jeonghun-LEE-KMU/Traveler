@@ -35,7 +35,7 @@ def minimal_ctx(**overrides) -> ContextData:
     return ContextData(**defaults)
 
 
-def sample_spot(place_id: int = 1) -> SpotCandidate:
+def sample_spot(place_id: str = "1") -> SpotCandidate:
     """테스트용 SpotCandidate 하나."""
     return SpotCandidate(
         place_id=place_id,
@@ -117,7 +117,7 @@ def test_candidate_spots_with_place_id_included():
     SQLite에 존재하는 place_id만 반환한다.
     place_id가 메시지에 없으면 GPT가 임의 번호를 생성해 DB 조회 실패.
     """
-    spot = sample_spot(place_id=42)
+    spot = sample_spot(place_id="42")
     ctx = minimal_ctx(candidate_spots=[spot])
     msg = build_context_message(ctx)
 
@@ -170,8 +170,8 @@ def test_indoor_flag_included_in_spot_info():
     WHY: 날씨가 "비"일 때 GPT가 실외 장소를 피하려면
     각 후보의 실내 여부를 알아야 한다. 이 정보가 없으면 날씨 제약 반영 불가.
     """
-    indoor_spot = SpotCandidate(1, "박물관", "관광", 10.0, True)
-    outdoor_spot = SpotCandidate(2, "해수욕장", "관광", 15.0, False)
+    indoor_spot = SpotCandidate("1", "박물관", "관광", 10.0, True)
+    outdoor_spot = SpotCandidate("2", "해수욕장", "관광", 15.0, False)
     ctx = minimal_ctx(candidate_spots=[indoor_spot, outdoor_spot])
     msg = build_context_message(ctx)
 
@@ -191,7 +191,7 @@ async def test_generate_course_valid_json_parses_successfully(mock_get_client):
     """
     valid_json = (
         '{"bot_message": "경주 코스를 추천해요", '
-        '"recommended_places": [{"place_id": 1, "visit_sequence": 1}]}'
+        '"recommended_places": [{"place_id": "1", "visit_sequence": 1}]}'
     )
     chunks = [_chunk(valid_json[:20]), _chunk(valid_json[20:])]
     _mock_client_with_chunks(mock_get_client, chunks)
@@ -200,7 +200,7 @@ async def test_generate_course_valid_json_parses_successfully(mock_get_client):
     course = await generate_course(ctx)
 
     assert course.bot_message == "경주 코스를 추천해요"
-    assert course.recommended_places[0].place_id == 1
+    assert course.recommended_places[0].place_id == "1"
 
 
 # ── Test 7: 깨진 JSON → ValidationError → fallback 반환 ──────────────────────
@@ -222,7 +222,7 @@ async def test_generate_course_malformed_json_returns_fallback(mock_get_client):
     course = await generate_course(ctx)
 
     assert "문제가 있었" in course.bot_message
-    assert course.recommended_places[0].place_id == 1
+    assert course.recommended_places[0].place_id == "1"
 
 
 # ── Test 8: 계절(L2)이 today 주입값 기준으로 메시지에 포함되는지 ──────────────
@@ -269,7 +269,7 @@ async def test_generate_course_api_error_returns_fallback(mock_get_client):
     course = await generate_course(ctx)
 
     assert "문제가 있었" in course.bot_message
-    assert course.recommended_places[0].place_id == 1
+    assert course.recommended_places[0].place_id == "1"
 
 
 # ── Test 10: companion이 있으면 "동행자:" 줄이 메시지에 포함 ─────────────────

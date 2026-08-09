@@ -27,7 +27,7 @@ def minimal_ctx(**overrides) -> ContextData:
         weather="맑음",
         candidate_spots=[
             SpotCandidate(
-                place_id=1,
+                place_id="1",
                 place_name="불국사",
                 category="관광",
                 distance_min=20.0,
@@ -44,7 +44,7 @@ def sample_course() -> StreamingCourseModel:
     return StreamingCourseModel(
         bot_message="경주의 고즈넉한 코스를 추천해요.",
         recommended_places=[
-            RecommendedPlaceModel(place_id=1, visit_sequence=1, duration_min=60)
+            RecommendedPlaceModel(place_id="1", visit_sequence=1, duration_min=60)
         ],
     )
 

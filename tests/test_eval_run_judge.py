@@ -43,7 +43,7 @@ def _case_dict(case_id: str, mode: str = "타지", tags: list[str] | None = None
             "mood": "",
             "candidate_spots": [
                 {
-                    "place_id": 1,
+                    "place_id": "1",
                     "place_name": "장소1",
                     "category": "관광",
                     "distance_min": 10.0,
@@ -64,18 +64,18 @@ def _write_dataset(path: Path, cases: list[dict]) -> None:
 
 
 def _passing_course() -> StreamingCourseModel:
-    """구조 메트릭을 전부 통과하는 코스 — place_id=1은 후보 목록 안에 있음."""
+    """구조 메트릭을 전부 통과하는 코스 — place_id="1"은 후보 목록 안에 있음."""
     return StreamingCourseModel(
         bot_message="좋은 코스를 추천해요",
-        recommended_places=[RecommendedPlaceModel(place_id=1, visit_sequence=1, duration_min=60)],
+        recommended_places=[RecommendedPlaceModel(place_id="1", visit_sequence=1, duration_min=60)],
     )
 
 
 def _failing_course() -> StreamingCourseModel:
-    """구조 메트릭 FAIL — place_id=999는 후보 목록(place_id=1) 밖이라 grounded=False."""
+    """구조 메트릭 FAIL — place_id="999"는 후보 목록(place_id="1") 밖이라 grounded=False."""
     return StreamingCourseModel(
         bot_message="아무 코스나 추천해요",
-        recommended_places=[RecommendedPlaceModel(place_id=999, visit_sequence=1, duration_min=60)],
+        recommended_places=[RecommendedPlaceModel(place_id="999", visit_sequence=1, duration_min=60)],
     )
 
 
