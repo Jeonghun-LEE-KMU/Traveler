@@ -82,18 +82,24 @@ def test_empty_place_name_raises():
     assert "place_name" in str(exc_info.value)
 
 
-# ── Test 3: visit_sequence 불연속 ────────────────────────────────────────────
+# ── Test 3: visit_sequence 불연속 (gap) ──────────────────────────────────────
 
 def test_non_sequential_visit_sequence_raises():
     """
-    visit_sequence가 1, 2, 3 순서가 아닐 때 ValidationError가 발생하는지 확인.
+    visit_sequence 값 자체에 gap이 있으면 정렬 후에도 여전히 ValidationError.
+
+    [동작 변경 — 2026-07-05] check_sequence_sequential이 "배열 순서 강제"에서
+    "visit_sequence로 정렬 후 1..n 연속성 검증"으로 바뀌었다. 이 테스트는 gap
+    케이스(2를 건너뜀)라 정렬해도 연속되지 않으므로 여전히 raise돼야 맞다 —
+    즉 옛 동작과 결과는 같지만, 통과 이유가 "배열 순서"가 아니라 "정렬 후 값
+    자체의 gap"으로 바뀌었다.
 
     WHY: 지도에 Polyline을 그릴 때 방문 순서가 곧 경로 순서다.
-    GPT가 1, 3, 2처럼 순서를 건너뛰거나 뒤섞으면 경로가 엉킨다.
+    GPT가 1, 3처럼 값 자체를 건너뛰면(진짜 malformation) 경로가 엉킨다.
     """
     places = [
         valid_place(1, 1),
-        valid_place(2, 3),  # 2를 건너뜀 → 불연속
+        valid_place(2, 3),  # 2를 건너뜀 → gap (정렬해도 연속 아님)
     ]
     with pytest.raises(ValidationError) as exc_info:
         StreamingCourseModel.model_validate(valid_course(places))
@@ -101,26 +107,84 @@ def test_non_sequential_visit_sequence_raises():
     assert "연속" in str(exc_info.value)
 
 
-# ── Test 4: duration_min 범위 초과 ───────────────────────────────────────────
+# ── Test 3b: visit_sequence 배열 순서만 뒤섞임 (신규) ────────────────────────
 
-def test_duration_min_out_of_range_raises():
+def test_shuffled_but_continuous_visit_sequence_passes():
     """
-    duration_min이 허용 범위(10~480분) 밖일 때 ValidationError가 발생하는지 확인.
+    배열 순서는 뒤섞였지만 visit_sequence 값 자체는 연속(1, 2)이면 통과하고,
+    정렬된 리스트([1, 2] 순서)가 반환되는지 확인.
+
+    [동작 변경 — 2026-07-05] 옛 로직은 enumerate(places)로 "배열 인덱스"와
+    visit_sequence를 비교했다. GPT가 순서 값은 맞게 냈는데 배열만 [2, 1]로
+    섞어 내면(정상 출력의 사소한 이탈) 전체 코스가 폴백으로 강등됐다.
+    Guardrails ③ "부분 재생성" 철학에 맞춰, 값 기준 정렬 검증으로 바꿨다.
+    """
+    places = [
+        valid_place(2, 2),  # 배열상 1번째지만 visit_sequence=2
+        valid_place(1, 1),  # 배열상 2번째지만 visit_sequence=1
+    ]
+    course = StreamingCourseModel.model_validate(valid_course(places))
+
+    # 정렬된 리스트가 반환되어 다운스트림(Polyline)이 순서대로 받는지 확인
+    assert [p.visit_sequence for p in course.recommended_places] == [1, 2]
+    assert course.recommended_places[0].place_id == 1
+    assert course.recommended_places[1].place_id == 2
+
+
+# ── Test 3c: visit_sequence 중복 (신규) ──────────────────────────────────────
+
+def test_duplicate_visit_sequence_raises():
+    """
+    visit_sequence 값이 중복(1, 2, 2)이면 정렬해도 연속이 아니므로 여전히 raise.
+
+    WHY: 중복은 gap과 마찬가지로 진짜 malformation이다.
+    두 장소가 같은 순번을 주장하면 Polyline이 어느 쪽을 먼저 그려야 할지
+    알 수 없다 — clamp나 정렬로 흡수할 수 없는 케이스이므로 계속 거부해야 한다.
+    """
+    places = [
+        valid_place(1, 1),
+        valid_place(2, 2),
+        valid_place(3, 2),  # 2가 중복
+    ]
+    with pytest.raises(ValidationError) as exc_info:
+        StreamingCourseModel.model_validate(valid_course(places))
+
+    assert "연속" in str(exc_info.value)
+
+
+# ── Test 4: duration_min 범위 초과 → clamp ───────────────────────────────────
+
+def test_duration_min_out_of_range_clamps():
+    """
+    duration_min이 허용 범위(10~480분) 밖이면 raise 대신 clamp되는지 확인.
+
+    [동작 변경 — 2026-07-05] 옛 로직은 Field(ge=10, le=480)로 하드 거부했다.
+    10곳 중 1곳만 duration_min이 이상해도(예: 600) course_generator가
+    ValidationError를 잡아 코스 전체를 폴백("죄송해요…" 1줄)으로 강등시켰다.
+    Guardrails ③ "부분 재생성" 철학에 맞춰, 범위 밖 값은 clamp로 흡수하고
+    코스 전체는 그대로 통과시키도록 바꿨다.
 
     WHY: GPT가 "5분 방문" 같은 비현실적 수치를 내놓거나
-    "600분(10시간)" 같은 일정 전체를 하나의 장소에 쏟아붓는 경우를 막는다.
+    "600분(10시간)" 같은 일정 전체를 하나의 장소에 쏟아붓는 경우,
+    이제는 그 장소 하나만 클램프되고 나머지 코스는 정상 진행된다.
     """
-    # 너무 짧은 경우 (10분 미만)
+    # 너무 짧은 경우 (10분 미만) → 10으로 clamp
     short_place = valid_place()
     short_place["duration_min"] = 5
-    with pytest.raises(ValidationError):
-        StreamingCourseModel.model_validate(valid_course([short_place]))
+    course = StreamingCourseModel.model_validate(valid_course([short_place]))
+    assert course.recommended_places[0].duration_min == 10
 
-    # 너무 긴 경우 (8시간 초과)
+    # 너무 긴 경우 (8시간 초과) → 480으로 clamp
     long_place = valid_place()
     long_place["duration_min"] = 600
-    with pytest.raises(ValidationError):
-        StreamingCourseModel.model_validate(valid_course([long_place]))
+    course = StreamingCourseModel.model_validate(valid_course([long_place]))
+    assert course.recommended_places[0].duration_min == 480
+
+    # None은 그대로 유지 (백엔드가 나중에 채워주는 흐름과 호환)
+    none_place = valid_place()
+    none_place["duration_min"] = None
+    course = StreamingCourseModel.model_validate(valid_course([none_place]))
+    assert course.recommended_places[0].duration_min is None
 
 
 # ── Test 5: recommended_places 비어있음 ──────────────────────────────────────

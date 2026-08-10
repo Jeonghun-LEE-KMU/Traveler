@@ -146,6 +146,10 @@ def _parse_weather_code(items: list[dict]) -> str:
     INPUT: 기상청 API response.json()["response"]["body"]["items"]["item"] 리스트
     OUTPUT: "맑음", "비", "눈" 등 → ContextData.weather 필드에 바로 사용 가능
     """
+    # ⚠️ 주의: items가 빈 리스트면 아래 forecast_times[-1]에서 IndexError — 무자료 응답 방어
+    if not items:
+        return _FALLBACK
+
     # 현재 시각과 가장 가까운 예보 시간(fcstTime) 추출
     # WHY: items에는 여러 시간대 예보가 섞여 있음, 지금 시각에 맞는 것만 필요
     now_hhmm = datetime.now().strftime("%H%M")
@@ -228,7 +232,8 @@ async def get_weather(lat: float, lng: float) -> str:
     except httpx.TimeoutException:
         # ⚠️ 기상청 API는 간혹 응답이 느림 — timeout=5s 초과 시 폴백
         return _FALLBACK
-    except (httpx.HTTPStatusError, KeyError, ValueError):
+    except (httpx.HTTPStatusError, KeyError, ValueError, IndexError, TypeError):
         # KeyError: 응답 구조가 예상과 다를 때 (API 스펙 변경 등)
         # ValueError: int() 변환 실패 (비정상 fcstValue)
+        # IndexError: 빈 예보 리스트 / TypeError: items가 빈 문자열("")
         return _FALLBACK
