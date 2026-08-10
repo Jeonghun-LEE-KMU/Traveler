@@ -62,7 +62,16 @@ def search_places(
     prefs: dict,
     top_k: int = DEFAULT_TOP_K,
     radius_km: float = DEFAULT_RADIUS_KM,
+    dest_lat: float | None = None,
+    dest_lon: float | None = None,
 ) -> list[SpotCandidate]:
+    """
+    장소 검색 메인 함수.
+
+    Args:
+        dest_lat, dest_lon: 목적지 좌표 (장거리 모드에서만 사용).
+            설정 시 Tmap searchPoiAlong으로 경로 상 POI를 추가 탐색한다.
+    """
     from traveler.rag.hybrid_search import search_places as hybrid_search_places
 
     try:
@@ -91,6 +100,12 @@ def search_places(
                 indoor=r.indoor,
             )
             filtered.append((spot, r))
+
+        # 장거리 모드: Tmap searchPoiAlong으로 경로 상 POI 추가
+        if dest_lat is not None and dest_lon is not None:
+            filtered = _merge_tmap_results(
+                filtered, lat, lon, dest_lat, dest_lon, visited
+            )
 
         if not filtered:
             logger.warning("[Retriever] GPS 필터 후 결과 없음, fallback 사용")
@@ -129,6 +144,66 @@ def search_places(
         return _fallback_spots()
 
 
+def _merge_tmap_results(
+    filtered: list[tuple[SpotCandidate, object]],
+    lat: float,
+    lon: float,
+    dest_lat: float,
+    dest_lon: float,
+    visited: set,
+) -> list[tuple[SpotCandidate, object]]:
+    """
+    Tmap searchPoiAlong 결과를 hybrid_search 결과에 추가.
+    이미 있는 place_id는 중복 추가하지 않는다.
+    """
+    import asyncio
+    from traveler.api.tmap import search_poi_along_route
+
+    try:
+        loop = asyncio.get_event_loop()
+        tmap_results = loop.run_until_complete(
+            search_poi_along_route(lat, lon, dest_lat, dest_lon)
+        )
+    except Exception as e:
+        logger.warning("[Retriever] Tmap 호출 실패: %s", e)
+        return filtered
+
+    existing_ids = {spot.place_id for spot, _ in filtered}
+    visited_str = {str(v) for v in visited}
+
+    for t in tmap_results:
+        place_id = _to_place_id(f"tmap_{t.lat}_{t.lon}")
+        if place_id in existing_ids:
+            continue
+        if str(place_id) in visited_str:
+            continue
+        dist_km = _haversine(lat, lon, t.lat, t.lon)
+        distance_min = round((dist_km / 60.0) * 60, 1)
+        spot = SpotCandidate(
+            place_id=place_id,
+            place_name=t.name,
+            category=t.category,
+            distance_min=distance_min,
+            indoor=False,
+        )
+        # Tmap 결과는 semantic_score/iconic_score가 없으므로
+        # dummy 객체로 감싸서 필터 리스트에 추가
+        filtered.append((spot, _TmapDummy(t.lat, t.lon)))
+        existing_ids.add(place_id)
+
+    logger.info("[Retriever] Tmap 병합 후 총 %d건", len(filtered))
+    return filtered
+
+
+class _TmapDummy:
+    """Tmap POI용 dummy raw_result (RRF 신호 최솟값 부여)."""
+    def __init__(self, lat: float, lon: float):
+        self.lat = lat
+        self.lng = lon
+        self.semantic_score = 0.0
+        self.iconic_score = 0.0
+
+
 def _fallback_spots() -> list[SpotCandidate]:
     return [
         SpotCandidate(place_id=1, place_name="불국사",   category="관광", distance_min=5.0,  indoor=False),
@@ -158,6 +233,8 @@ def get_context(
     visited: set = None,
     prefs: dict = None,
     radius_km: float = DEFAULT_RADIUS_KM,
+    dest_lat: float | None = None,
+    dest_lon: float | None = None,
 ) -> tuple:
     if visited is None:
         visited = set()
@@ -171,6 +248,8 @@ def get_context(
         visited=visited,
         prefs=prefs,
         radius_km=radius_km,
+        dest_lat=dest_lat,
+        dest_lon=dest_lon,
     )
 
     context_data = ContextData(
