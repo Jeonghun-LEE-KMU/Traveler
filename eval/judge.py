@@ -53,7 +53,14 @@ class JudgeResult(BaseModel):
 
     @property
     def mean(self) -> float:
-        """5축 점수의 평균 — report.json 집계(축 평균)에서 사용."""
+        """
+        5축 점수의 평균.
+
+        # ⚠️ 주의(PM 리뷰 반영): run_judge.py의 report.json 집계는 이 프로퍼티를
+        # 쓰지 않는다 — 여러 케이스를 모아 축별 평균을 내는 _axis_means()가 따로
+        # 있다. 이건 JudgeResult 하나만 놓고 임시로 평균을 보고 싶을 때 쓰는
+        # 편의 프로퍼티다.
+        """
         scores = [
             self.condition_fit.score,
             self.mood_match.score,

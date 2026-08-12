@@ -68,7 +68,14 @@ def test_hallucinated_place_id_fails_grounded_only():
     assert metrics.passed is False
 
 
-def test_time_budget_exceeded_fails_time_budget_only():
+def test_time_budget_exceeded_is_reported_but_does_not_fail_passed():
+    """
+    [PM 리뷰 반영 — 2026-08-10] time_budget_ok는 더 이상 passed를 좌우하지 않는다.
+    retriever.py의 distance_min이 실제로는 km 단위이고 경유지 간 이동을 반영하지
+    않는 근사치라, 이 게이트로 코스를 fallback 취급하면 잘못된 근거로 정상 코스를
+    떨어뜨릴 위험이 있다(eval/metrics.py measure() 주석 참고). time_budget_ok
+    자체는 계속 계산·기록해 리포트에서 참고할 수 있게 한다.
+    """
     # duration_hours=1 → 예산 72분(1*60*1.2). duration_min 400 + 이동 20분(10*2) 초과.
     output = _course_json(
         [{"place_id": "1", "visit_sequence": 1, "place_name": "A", "duration_min": 400}]
@@ -78,7 +85,7 @@ def test_time_budget_exceeded_fails_time_budget_only():
     assert metrics.json_valid is True
     assert metrics.grounded is True
     assert metrics.time_budget_ok is False
-    assert metrics.passed is False
+    assert metrics.passed is True
 
 
 def test_fallback_message_detected():

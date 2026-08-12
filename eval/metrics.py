@@ -9,13 +9,9 @@ LLM 없이 규칙으로 100% 판정 가능한 항목만 다룬다("LLM as tiebre
 
 from pydantic import BaseModel, ValidationError
 
+from traveler.core.course_generator import FALLBACK_BOT_MESSAGE
 from traveler.rag.types import ContextData
 from traveler.validation.schema import StreamingCourseModel
-
-# course_generator._build_fallback()의 bot_message와 정확히 동일해야 한다.
-# WHY: _build_fallback()도 스키마 검증을 통과하므로, 이 문자열 비교 없이는
-# API가 전부 죽어도 "구조 검증 통과"로 오판된다.
-FALLBACK_BOT_MESSAGE = "죄송해요, 지금 코스를 만드는 데 문제가 있었어요. 잠시 후 다시 시도해주세요."
 
 # WHY 20% 여유: duration_hours는 사용자가 말한 가용 시간이고, 이동시간은
 # distance_min(현재 위치 기준) * 2로 근사한 추정치라 약간의 초과는 정상 범위다.
@@ -75,6 +71,13 @@ def measure(ctx: ContextData, expectations: dict, raw_output: str) -> Structural
     )
     grounded = not hallucinated_ids
 
+    # ⚠️ 주의(PM 리뷰 반영, 2026-08-10): time_budget_ok는 참고용 기록일 뿐 passed에는
+    # 반영하지 않는다. distance_min은 candidate_spots 하나(가장 먼 곳)의 왕복만 셀 뿐
+    # 경유지 간 이동은 0으로 가정해 과소추정이고, retriever.py가 채우는 distance_min
+    # 자체도 실제로는 분이 아니라 km 단위다(계산식이 dist_km와 항등). 이 값 위에 세운
+    # 게이트로 코스를 fallback 처리하면 잘못된 근거로 정상 코스를 떨어뜨릴 수 있다.
+    # Tmap 실 이동시간이 연동되기 전까지는 리포트에만 기록하고 판정에서는 뺀다 —
+    # prompt.py에서 근거 없는 이동시간 CoT 지시를 뺀 것과 같은 맥락(v2.1).
     distance_by_id = {spot.place_id: spot.distance_min for spot in ctx.candidate_spots}
     max_distance = max(
         (distance_by_id.get(p.place_id, 0.0) for p in course.recommended_places),
@@ -85,7 +88,7 @@ def measure(ctx: ContextData, expectations: dict, raw_output: str) -> Structural
     time_budget_min = ctx.duration_hours * 60 * TIME_BUDGET_SLACK
     time_budget_ok = estimated_total_min <= time_budget_min
 
-    passed = not is_fallback and place_count_ok and grounded and time_budget_ok
+    passed = not is_fallback and place_count_ok and grounded
 
     return StructuralMetrics(
         json_valid=True,

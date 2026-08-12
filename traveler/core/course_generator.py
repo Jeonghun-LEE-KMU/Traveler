@@ -20,6 +20,12 @@ from traveler.validation.schema import RecommendedPlaceModel, StreamingCourseMod
 # WHY __name__: 로그 출처가 "traveler.core.course_generator"로 표시되어 디버깅이 쉬워진다
 logger = logging.getLogger(__name__)
 
+# WHY 상수로 노출하는가(PM 리뷰 반영): eval/metrics.py가 fallback 여부를 판정하려면
+# 이 문자열과 정확히 같아야 하는데, 예전엔 두 파일에 리터럴로 복제돼 있었다.
+# 한쪽만 고치면 폴백 감지가 조용히 깨지는 위험이 있어 여기 한 곳만 진실로 두고
+# metrics.py가 import해서 쓴다.
+FALLBACK_BOT_MESSAGE = "죄송해요, 지금 코스를 만드는 데 문제가 있었어요. 잠시 후 다시 시도해주세요."
+
 
 def _build_fallback(ctx: ContextData) -> StreamingCourseModel:
     """
@@ -33,7 +39,7 @@ def _build_fallback(ctx: ContextData) -> StreamingCourseModel:
         ctx.candidate_spots[0].place_id if ctx.candidate_spots else "1"
     )
     return StreamingCourseModel(
-        bot_message="죄송해요, 지금 코스를 만드는 데 문제가 있었어요. 잠시 후 다시 시도해주세요.",
+        bot_message=FALLBACK_BOT_MESSAGE,
         recommended_places=[
             RecommendedPlaceModel(place_id=fallback_place_id, visit_sequence=1)
         ],

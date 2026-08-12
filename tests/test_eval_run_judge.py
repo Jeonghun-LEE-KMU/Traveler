@@ -63,6 +63,17 @@ def _write_dataset(path: Path, cases: list[dict]) -> None:
             f.write(json.dumps(case, ensure_ascii=False) + "\n")
 
 
+def _write_baseline(path: Path, mode: str, score: float) -> None:
+    """
+    baseline.json 픽스처. 5축 전부를 동일 점수로 채워, 이번 실행 judge 점수가
+    같은 score면 delta=0이 되어 회귀로 잡히지 않게 한다.
+    """
+    axes = ("condition_fit", "mood_match", "route_sanity", "diversity", "completeness")
+    path.write_text(
+        json.dumps({mode: {axis: score for axis in axes}}), encoding="utf-8"
+    )
+
+
 def _passing_course() -> StreamingCourseModel:
     """구조 메트릭을 전부 통과하는 코스 — place_id="1"은 후보 목록 안에 있음."""
     return StreamingCourseModel(
@@ -98,11 +109,15 @@ def test_all_structural_pass_verdict_pass(mock_generate, mock_judge, tmp_path):
     dataset = tmp_path / "cases.jsonl"
     _write_dataset(dataset, [_case_dict("case-1"), _case_dict("case-2")])
     out = tmp_path / "report.json"
+    baseline = tmp_path / "baseline.json"
+    _write_baseline(baseline, mode="타지", score=5.0)  # delta=0 → 회귀 아님
 
     mock_generate.return_value = _passing_course()
     mock_judge.return_value = _judge_result(5)
 
-    exit_code = main(["--dataset", str(dataset), "--out", str(out)])
+    exit_code = main(
+        ["--dataset", str(dataset), "--out", str(out), "--baseline", str(baseline)]
+    )
 
     assert exit_code == 0
     report = json.loads(out.read_text(encoding="utf-8"))
@@ -178,11 +193,16 @@ def test_baseline_regression_detected(mock_generate, mock_judge, tmp_path):
     assert report["regression"]["deltas"]["타지"]["condition_fit"] <= -0.3
 
 
-# ── Test (d): baseline 파일이 없는 최초 실행 → 예외 없이 동작 + failures에 기록 ─
+# ── Test (d): baseline 파일이 없는 최초 실행 → 예외 없이 동작 + INCONCLUSIVE ──
 
 @patch("eval.run_judge.judge_course")
 @patch("eval.run_judge.generate_course")
-def test_missing_baseline_first_run_no_crash(mock_generate, mock_judge, tmp_path):
+def test_missing_baseline_first_run_is_inconclusive(mock_generate, mock_judge, tmp_path):
+    """
+    [PM 리뷰 반영 — 2026-08-10] baseline 없음은 더 이상 조용히 PASS로 묻히지 않는다.
+    구조 메트릭은 전부 통과했지만 회귀 판정 자체를 할 수 없으므로 verdict는
+    INCONCLUSIVE, exit code는 2다.
+    """
     dataset = tmp_path / "cases.jsonl"
     _write_dataset(dataset, [_case_dict("case-1")])
     out = tmp_path / "report.json"
@@ -195,11 +215,11 @@ def test_missing_baseline_first_run_no_crash(mock_generate, mock_judge, tmp_path
         ["--dataset", str(dataset), "--out", str(out), "--baseline", str(baseline)]
     )
 
-    # baseline이 없어도 구조 메트릭만으로 판정 — 전부 PASS이므로 verdict PASS
-    assert exit_code == 0
+    assert exit_code == 2
     report = json.loads(out.read_text(encoding="utf-8"))
-    assert report["regression"]["verdict"] == "PASS"
-    assert any("baseline 없음" in f for f in report["regression"]["failures"])
+    assert report["regression"]["verdict"] == "INCONCLUSIVE"
+    assert report["regression"]["failures"] == []
+    assert any("baseline 파일 없음" in n for n in report["regression"]["notes"])
     assert report["regression"]["deltas"] == {}
 
 
@@ -244,10 +264,16 @@ def test_no_judge_flag_skips_judge_call(mock_generate, mock_judge, tmp_path):
     dataset = tmp_path / "cases.jsonl"
     _write_dataset(dataset, [_case_dict("case-1")])
     out = tmp_path / "report.json"
+    # baseline을 빈 dict로 미리 만들어 "baseline 없음" 노트가 섞이지 않게 한다 —
+    # 이 테스트가 보려는 건 --no-judge가 judge 호출 자체를 건너뛰는지다.
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text("{}", encoding="utf-8")
 
     mock_generate.return_value = _passing_course()
 
-    exit_code = main(["--dataset", str(dataset), "--out", str(out), "--no-judge"])
+    exit_code = main(
+        ["--dataset", str(dataset), "--out", str(out), "--no-judge", "--baseline", str(baseline)]
+    )
 
     assert exit_code == 0
     mock_judge.assert_not_called()
@@ -261,6 +287,11 @@ def test_no_judge_flag_skips_judge_call(mock_generate, mock_judge, tmp_path):
 @patch("eval.run_judge.judge_course")
 @patch("eval.run_judge.generate_course")
 def test_save_baseline_writes_axis_means(mock_generate, mock_judge, tmp_path):
+    """
+    baseline.json이 아직 없는 최초 실행이라 verdict는 INCONCLUSIVE(exit code 2)지만,
+    FAIL이 아니므로 --save-baseline은 정상적으로 저장된다 — 이게 baseline을 처음
+    만드는 표준 시나리오다(PM 리뷰 반영: FAIL일 때만 저장을 막는다).
+    """
     dataset = tmp_path / "cases.jsonl"
     _write_dataset(dataset, [_case_dict("case-1", mode="근교")])
     out = tmp_path / "report.json"
@@ -278,7 +309,86 @@ def test_save_baseline_writes_axis_means(mock_generate, mock_judge, tmp_path):
         ]
     )
 
-    assert exit_code == 0
+    assert exit_code == 2
     assert baseline.exists()
     saved = json.loads(baseline.read_text(encoding="utf-8"))
     assert saved["근교"]["condition_fit"] == 4.0
+
+
+# ── Test (h): verdict FAIL이면 --save-baseline이 저장을 거부한다 ──────────────
+
+@patch("eval.run_judge.judge_course")
+@patch("eval.run_judge.generate_course")
+def test_save_baseline_blocked_when_verdict_fail(mock_generate, mock_judge, tmp_path):
+    dataset = tmp_path / "cases.jsonl"
+    _write_dataset(dataset, [_case_dict("case-bad")])
+    out = tmp_path / "report.json"
+    baseline = tmp_path / "baseline.json"  # 존재하지 않음 → save 시 새로 만들어질 수 있는 상태
+
+    mock_generate.return_value = _failing_course()  # 구조 FAIL → verdict FAIL
+    mock_judge.return_value = _judge_result(5)
+
+    exit_code = main(
+        [
+            "--dataset", str(dataset),
+            "--out", str(out),
+            "--baseline", str(baseline),
+            "--save-baseline",
+        ]
+    )
+
+    assert exit_code == 1
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["regression"]["verdict"] == "FAIL"
+    assert not baseline.exists()  # FAIL 상태로는 baseline이 저장되지 않아야 함
+
+
+# ── Test (i): --out 부모 디렉토리가 없어도 자동 생성된다 ──────────────────────
+
+@patch("eval.run_judge.judge_course")
+@patch("eval.run_judge.generate_course")
+def test_out_parent_directory_is_auto_created(mock_generate, mock_judge, tmp_path):
+    dataset = tmp_path / "cases.jsonl"
+    _write_dataset(dataset, [_case_dict("case-1")])
+    out = tmp_path / "reports" / "nested" / "report.json"  # 존재하지 않는 하위 디렉토리
+    baseline = tmp_path / "baseline.json"
+    _write_baseline(baseline, mode="타지", score=5.0)
+
+    mock_generate.return_value = _passing_course()
+    mock_judge.return_value = _judge_result(5)
+
+    exit_code = main(
+        ["--dataset", str(dataset), "--out", str(out), "--baseline", str(baseline)]
+    )
+
+    assert exit_code == 0
+    assert out.exists()
+
+
+# ── Test (j): 한 모드의 judge 표본이 0건이면 INCONCLUSIVE ────────────────────
+
+@patch("eval.run_judge.judge_course")
+@patch("eval.run_judge.generate_course")
+def test_zero_judge_samples_in_mode_is_inconclusive(mock_generate, mock_judge, tmp_path):
+    """
+    judge_course가 계속 None을 반환하면(파싱 실패 등) 구조는 통과해도 그 모드의
+    judge 표본이 0건이라 델타 비교를 할 수 없다. 이걸 조용히 PASS로 묻지 않고
+    INCONCLUSIVE로 표시해야 한다(PM 리뷰 반영).
+    """
+    dataset = tmp_path / "cases.jsonl"
+    _write_dataset(dataset, [_case_dict("case-1", mode="타지")])
+    out = tmp_path / "report.json"
+    baseline = tmp_path / "baseline.json"
+    _write_baseline(baseline, mode="타지", score=5.0)
+
+    mock_generate.return_value = _passing_course()
+    mock_judge.return_value = None  # judge 응답 파싱 실패를 흉내냄
+
+    exit_code = main(
+        ["--dataset", str(dataset), "--out", str(out), "--baseline", str(baseline)]
+    )
+
+    assert exit_code == 2
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["regression"]["verdict"] == "INCONCLUSIVE"
+    assert any("judge 표본 0건" in n for n in report["regression"]["notes"])
