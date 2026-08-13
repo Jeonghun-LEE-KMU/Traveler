@@ -51,12 +51,16 @@ def build_persona_prompt(conversation: list[str]) -> str:
     대화가 시스템 지시가 아닌 데이터임을 반복해서 명시한다. 각 발화는 JSON
     문자열로 직렬화하므로 줄바꿈이나 따옴표가 있어도 발화 경계를 유지한다.
     """
-    if not conversation or not any(
-        isinstance(message, str) and message.strip() for message in conversation
-    ):
+    # WHY 이 순서인가(PM 리뷰 반영): 빈 검사를 타입 검사보다 먼저 하면 [123]처럼
+    # 문자열이 아닌 항목이 섞였을 때도 "비어 있습니다"로 오판된다(isinstance 실패가
+    # any()에서 조용히 False로 흡수되기 때문). 항목 존재 → 타입 → 공백만 있는지
+    # 순서로 검사해야 각 오류가 정확한 메시지로 나온다.
+    if not conversation:
         raise ValueError("분석할 대화가 비어 있습니다.")
     if any(not isinstance(message, str) for message in conversation):
         raise ValueError("대화의 각 항목은 문자열이어야 합니다.")
+    if not any(message.strip() for message in conversation):
+        raise ValueError("분석할 대화가 비어 있습니다.")
 
     serialized_messages = "\n".join(
         f"{index}. {json.dumps(message, ensure_ascii=False)}"
@@ -101,8 +105,23 @@ def build_persona_prompt(conversation: list[str]) -> str:
 """
 
 
+def _strip_code_fence(text: str) -> str:
+    """```json ... ``` 또는 ``` ... ``` 로 감싼 응답에서 펜스만 벗겨낸다.
+
+    WHY(PM 리뷰 반영): 프롬프트가 "코드 펜스와 설명은 금지"라고 명시해도 GPT가
+    종종 무시하고 마크다운 펜스로 감싸 반환한다. 펜스가 없는 정상 응답은 그대로
+    통과해야 하므로 시작·끝이 둘 다 펜스일 때만 벗긴다.
+    """
+    stripped = text.strip()
+    if stripped.startswith("```") and stripped.endswith("```"):
+        stripped = stripped[3:-3].strip()
+        if stripped.startswith("json"):
+            stripped = stripped[4:].lstrip()
+    return stripped
+
+
 def parse_persona_response(response_json: str) -> PersonaProfile:
     """LLM의 JSON 문자열을 파싱하고 전체 페르소나 계약을 검증한다."""
     if not isinstance(response_json, str) or not response_json.strip():
         raise ValueError("페르소나 응답 JSON이 비어 있습니다.")
-    return PersonaProfile.model_validate_json(response_json)
+    return PersonaProfile.model_validate_json(_strip_code_fence(response_json))
