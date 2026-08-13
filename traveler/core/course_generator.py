@@ -20,6 +20,12 @@ from traveler.validation.schema import RecommendedPlaceModel, StreamingCourseMod
 # WHY __name__: 로그 출처가 "traveler.core.course_generator"로 표시되어 디버깅이 쉬워진다
 logger = logging.getLogger(__name__)
 
+# WHY 상수로 노출하는가(PM 리뷰 반영): eval/metrics.py가 fallback 여부를 판정하려면
+# 이 문자열과 정확히 같아야 하는데, 예전엔 두 파일에 리터럴로 복제돼 있었다.
+# 한쪽만 고치면 폴백 감지가 조용히 깨지는 위험이 있어 여기 한 곳만 진실로 두고
+# metrics.py가 import해서 쓴다.
+FALLBACK_BOT_MESSAGE = "죄송해요, 지금 코스를 만드는 데 문제가 있었어요. 잠시 후 다시 시도해주세요."
+
 
 def _build_fallback(ctx: ContextData) -> StreamingCourseModel:
     """
@@ -27,13 +33,13 @@ def _build_fallback(ctx: ContextData) -> StreamingCourseModel:
 
     # WHY: 파싱이 깨져도 generate_course()는 항상 유효한 StreamingCourseModel을
     # 반환해야 한다(Graceful Degradation). candidate_spots가 있으면 그중
-    # 첫 번째 place_id를 쓰고, 없으면 1을 쓴다(recommended_places는 min_length=1).
+    # 첫 번째 place_id를 쓰고, 없으면 "1"을 쓴다(recommended_places는 min_length=1).
     """
     fallback_place_id = (
-        ctx.candidate_spots[0].place_id if ctx.candidate_spots else 1
+        ctx.candidate_spots[0].place_id if ctx.candidate_spots else "1"
     )
     return StreamingCourseModel(
-        bot_message="죄송해요, 지금 코스를 만드는 데 문제가 있었어요. 잠시 후 다시 시도해주세요.",
+        bot_message=FALLBACK_BOT_MESSAGE,
         recommended_places=[
             RecommendedPlaceModel(place_id=fallback_place_id, visit_sequence=1)
         ],
@@ -43,12 +49,17 @@ def _build_fallback(ctx: ContextData) -> StreamingCourseModel:
 async def generate_course(
     ctx: ContextData,
     travel_mode: str = "타지",
+    *,
+    temperature: float = 0.3,
 ) -> StreamingCourseModel:
     """
     여행 컨텍스트를 받아 GPT-4o 스트리밍으로 코스를 생성하고 Pydantic으로 검증한다.
 
     # INPUT:  ContextData — 이수연의 RAG 파이프라인이 채워서 전달하는 컨텍스트
     #         travel_mode — Router(Sprint 6)가 감지한 여행 유형 ("근교"|"타지"|"장거리")
+    #         temperature — keyword-only, 기본값 0.3(프로덕션 동작 무변경).
+    #           Sprint 5 eval 파이프라인(eval/run_judge.py)이 재현성 확보를 위해
+    #           0을 명시적으로 전달하는 용도로 노출됐다(D3, 설계 spec §5.2).
     # OUTPUT: StreamingCourseModel — Pydantic 검증 완료된 코스 객체
     # COST:   GPT-4o 기준 입력 $2.5/1M, 출력 $10/1M 토큰
     # ⚠️ 주의: travel_mode는 Sprint 6 Router 구현 전까지 호출부에서 직접 전달
@@ -76,7 +87,7 @@ async def generate_course(
                 {"role": "user", "content": user_message},
             ],
             response_format={"type": "json_object"},   # JSON만 반환
-            temperature=0.3,
+            temperature=temperature,
             stream=True,
             stream_options={"include_usage": True},    # 마지막 청크에 usage 포함
         )

@@ -19,6 +19,11 @@ A 방식 스트리밍 채택:
   → 백엔드가 place_id로 SQLite 조회해 place_name 채움 (lat/lng와 동일 패턴)
   → duration_min은 TourAPI 평균 체류시간 데이터로 채울 예정 (Sprint 2)
   GPT가 두 필드를 생성하면 그대로 사용, 없으면 None → 백엔드 보강 흐름으로 처리.
+
+[v1.2 스키마 변경 — 2026-08-09, Issue #15 · 이수연 합의]
+  place_id를 SQLite PK(int)에서 content_id(문자열)로 변경.
+  PK는 DB 스키마가 바뀌면 값이 깨질 수 있어, 재조회 없이도 안정적인
+  content_id 문자열을 단일 출처로 쓰기로 함.
 """
 
 from typing import Optional
@@ -36,7 +41,7 @@ class RecommendedPlaceModel(BaseModel):
     GPT/이수연 출력 → place_id → 백엔드 SQLite 조회 → place_name, lat/lng
                                                       → TourAPI → duration_min
     """
-    place_id: int = Field(ge=1)                        # SQLite 장소 ID (PK) — 필수
+    place_id: str = Field(min_length=1)                 # content_id 문자열 — 필수
     visit_sequence: int = Field(ge=1)                  # 방문 순서 (1부터) — 필수
     place_name: Optional[str] = None                   # 장소명 — 백엔드가 SQLite로 채움
     duration_min: Optional[int] = None                 # 체류 시간 — TourAPI로 채울 예정. 범위는 _clamp_duration이 흡수
