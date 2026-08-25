@@ -52,7 +52,7 @@ async def run() -> None:
     print("=" * 60)
 
     # 1단계: RAG 컨텍스트 (현재 DUMMY — 경주 5개 장소 하드코딩)
-    ctx = get_context(user_query=SCENARIO)
+    ctx, _ = get_context(user_query=SCENARIO)
     print("\n[1단계] get_context() → ContextData")
     print(json.dumps(asdict(ctx), ensure_ascii=False, indent=2))
 
