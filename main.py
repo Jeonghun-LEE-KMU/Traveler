@@ -47,14 +47,13 @@ app = FastAPI(title="TRAVELER_Mobility_RAG_Hub_Production")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,  # allow_origins=["*"]와 allow_credentials=True 조합은 브라우저 거부
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # 대화 히스토리 in-memory (Sprint 5에서 SQLite로 전환 예정)
 memory_store: dict = {}
-
 
 def get_session_history(s_id: str) -> ChatMessageHistory:
     if s_id not in memory_store:

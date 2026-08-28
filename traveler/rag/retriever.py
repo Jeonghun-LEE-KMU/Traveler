@@ -3,7 +3,6 @@ RAG Retriever - Sprint 4
 hybrid_search.py(Pinecone + SQLite) + GPS 반경 필터 + RRF 순위 결합 + SpotCandidate 변환
 """
 
-import hashlib
 import logging
 import math
 
@@ -27,16 +26,13 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-def _to_place_id(content_id: str) -> int:
+def _to_place_id(content_id: str) -> str:
     """
     content_id → place_id 변환.
-    TourAPI content_id는 수치 문자열이므로 int 직변환이 원칙.
-    비수치 케이스는 md5 기반 stable hash (서버 재시작 영향 없음).
+    PR #17(place_id 문자열 전환) 이후: content_id 문자열을 그대로 사용.
+    hash() 기반 임시 변환 제거 — 서버 재시작에도 안전하고 SQLite PK와 1:1 매핑.
     """
-    try:
-        return int(content_id)
-    except (ValueError, TypeError):
-        return int(hashlib.md5(content_id.encode()).hexdigest(), 16) % 1_000_000
+    return str(content_id) if content_id else ""
 
 
 def _apply_diversity(spots: list[SpotCandidate], max_per_category: int = 3) -> list[SpotCandidate]:
@@ -91,7 +87,7 @@ def search_places(
             dist_km = _haversine(lat, lon, r.lat, r.lng)
             if dist_km > radius_km:
                 continue
-            distance_min = round((dist_km / 60.0) * 60, 1)
+            distance_min = round(dist_km, 1)  # 60km/h 기준 1km = 1분, dist_km == distance_min
             spot = SpotCandidate(
                 place_id=_to_place_id(r.content_id),
                 place_name=r.name,
@@ -172,7 +168,7 @@ def _merge_tmap_results(
     visited_str = {str(v) for v in visited}
 
     for t in tmap_results:
-        place_id = _to_place_id(f"tmap_{t.lat}_{t.lon}")
+        place_id = f"tmap_{t.lat}_{t.lon}"
         if place_id in existing_ids:
             continue
         if str(place_id) in visited_str:
@@ -206,9 +202,9 @@ class _TmapDummy:
 
 def _fallback_spots() -> list[SpotCandidate]:
     return [
-        SpotCandidate(place_id=1, place_name="불국사",   category="관광", distance_min=5.0,  indoor=False),
-        SpotCandidate(place_id=2, place_name="첨성대",   category="관광", distance_min=12.0, indoor=False),
-        SpotCandidate(place_id=3, place_name="교리김밥", category="음식", distance_min=15.0, indoor=True),
+        SpotCandidate(place_id="125266",  place_name="불국사",   category="관광", distance_min=5.0,  indoor=False),
+        SpotCandidate(place_id="126508",  place_name="첨성대",   category="관광", distance_min=12.0, indoor=False),
+        SpotCandidate(place_id="2733144", place_name="교리김밥", category="음식", distance_min=15.0, indoor=True),
     ]
 
 
