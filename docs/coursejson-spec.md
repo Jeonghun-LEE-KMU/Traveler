@@ -10,7 +10,7 @@ CourseJSON은 LLM 코스 생성 결과와 백엔드·지도 UI 사이의 최소 
   "bot_message": "사용자에게 먼저 보여줄 안내 문장",
   "recommended_places": [
     {
-      "place_id": 17,
+      "place_id": "17",
       "visit_sequence": 1,
       "place_name": "예시 장소",
       "duration_min": 60
@@ -25,7 +25,8 @@ CourseJSON은 LLM 코스 생성 결과와 백엔드·지도 UI 사이의 최소 
 
 ## 장소 필드
 
-- `place_id`: 필수 정수이며 1 이상이다. SQLite 장소 PK와 연결된다.
+- `place_id`: 필수 문자열이며 빈 문자열일 수 없다. content_id와 1:1로 연결된다
+  (2026-08-09 변경: SQLite PK int는 DB 재구성 시 깨질 수 있어 문자열로 통일했다. Issue #15).
 - `visit_sequence`: 필수 정수이며 1부터 시작한다.
 - `place_name`: 선택 문자열이다. 없으면 백엔드가 place_id로 보강한다.
 - `duration_min`: 선택 정수다. 없으면 백엔드 체류시간 데이터로 보강할 수 있다.
@@ -47,7 +48,7 @@ CourseJSON은 LLM 코스 생성 결과와 백엔드·지도 UI 사이의 최소 
 LLM 응답이 JSON 파싱에 실패하거나 위 스키마를 통과하지 못하거나 API 호출이
 실패하면 코스 생성기는 예외를 사용자에게 전파하지 않고 fallback
 `StreamingCourseModel`을 반환한다. 후보 장소가 있으면 첫 후보의 place_id를,
-없으면 안전 기본값 1을 사용하고 `visit_sequence=1`로 구성한다. 이 동작은
+없으면 안전 기본값 "1"을 사용하고 `visit_sequence=1`로 구성한다. 이 동작은
 서비스 중단을 피하기 위한 Graceful Degradation이며, 잘못된 원본 응답을
 정상 데이터로 간주한다는 뜻은 아니다.
 

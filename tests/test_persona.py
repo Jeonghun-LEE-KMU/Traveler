@@ -69,8 +69,23 @@ def test_build_persona_prompt_treats_conversation_as_data():
 
 
 def test_build_persona_prompt_rejects_empty_conversation():
-    with pytest.raises(ValueError, match="대화"):
+    with pytest.raises(ValueError, match="비어"):
         build_persona_prompt([])
+
+
+def test_build_persona_prompt_rejects_whitespace_only_conversation():
+    with pytest.raises(ValueError, match="비어"):
+        build_persona_prompt(["   ", ""])
+
+
+def test_build_persona_prompt_reports_type_error_not_empty_error():
+    """
+    [PM 리뷰 반영] 문자열이 아닌 항목이 섞이면 "비어 있습니다"가 아니라
+    "각 항목은 문자열이어야 합니다"가 나와야 한다. 빈 검사가 타입 검사보다
+    먼저면 isinstance 실패가 any()에서 조용히 False로 흡수돼 오판된다.
+    """
+    with pytest.raises(ValueError, match="문자열"):
+        build_persona_prompt([123])
 
 
 def test_parse_persona_response_returns_validated_profile():
@@ -78,6 +93,24 @@ def test_parse_persona_response_returns_validated_profile():
 
     assert profile.preference_keywords == ["조용한 카페", "숲길"]
     assert profile.taste_vector.relaxation == 0.9
+
+
+@pytest.mark.parametrize(
+    "wrap",
+    [
+        lambda body: f"```json\n{body}\n```",
+        lambda body: f"```\n{body}\n```",
+    ],
+)
+def test_parse_persona_response_strips_code_fence(wrap):
+    """
+    [PM 리뷰 반영] 프롬프트가 코드 펜스를 금지해도 GPT가 종종 무시한다.
+    ```json ... ``` / ``` ... ``` 로 감싸도 정상 파싱돼야 한다.
+    """
+    body = json.dumps(_valid_persona_payload())
+    profile = parse_persona_response(wrap(body))
+
+    assert profile.preference_keywords == ["조용한 카페", "숲길"]
 
 
 @pytest.mark.parametrize(

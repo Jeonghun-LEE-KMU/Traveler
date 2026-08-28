@@ -11,7 +11,11 @@ WHY 이 테스트가 필요한가:
 [T7 — 2026-05-27]
   경계값(Boundary Value) 테스트 2종 추가:
     - 최대 장소 수(10개 통과, 11개 실패)
-    - place_id=0 차단 (SQLite PK는 1부터 시작)
+    - place_id 빈 문자열 차단
+
+[v1.2 — 2026-08-09, Issue #15]
+  place_id를 int(SQLite PK)에서 str(content_id)로 변경. 경계값 테스트도
+  "0 차단"에서 "빈 문자열 차단"으로 교체(자세한 배경은 schema.py 헤더 참고).
 """
 
 import pytest
@@ -25,7 +29,7 @@ from traveler.validation.schema import RecommendedPlaceModel, StreamingCourseMod
 def valid_place(place_id: int = 1, sequence: int = 1) -> dict:
     """테스트용 정상 장소 dict. 반복 작성을 줄이기 위한 헬퍼 (DRY)."""
     return {
-        "place_id": place_id,
+        "place_id": str(place_id),
         "place_name": "불국사",
         "visit_sequence": sequence,
         "duration_min": 60,
@@ -127,8 +131,8 @@ def test_shuffled_but_continuous_visit_sequence_passes():
 
     # 정렬된 리스트가 반환되어 다운스트림(Polyline)이 순서대로 받는지 확인
     assert [p.visit_sequence for p in course.recommended_places] == [1, 2]
-    assert course.recommended_places[0].place_id == 1
-    assert course.recommended_places[1].place_id == 2
+    assert course.recommended_places[0].place_id == "1"
+    assert course.recommended_places[1].place_id == "2"
 
 
 # ── Test 3c: visit_sequence 중복 (신규) ──────────────────────────────────────
@@ -207,12 +211,12 @@ def test_suyeon_format_passes():
     """
     이수연 /api/chat 출력처럼 place_name, duration_min이 없어도 통과하는지 확인.
 
-    WHY: 이수연 출력 포맷: {"place_id": 1, "visit_sequence": 1}
+    WHY: 이수연 출력 포맷: {"place_id": "1", "visit_sequence": 1}
     두 필드를 Optional로 바꿨으므로 이 포맷이 Pydantic 검증을 통과해야 한다.
     백엔드가 place_id로 SQLite 조회해 나중에 채우는 흐름 (lat/lng 제거와 동일 패턴).
     """
     suyeon_place = {
-        "place_id": 1,
+        "place_id": "1",
         "visit_sequence": 1,
         # place_name, duration_min 없음 — 이수연 포맷
     }
@@ -242,17 +246,16 @@ def test_max_places_boundary():
         StreamingCourseModel.model_validate(valid_course(places_11))
 
 
-# ── Test 8: place_id 경계값 (0 차단) ─────────────────────────────────────────
+# ── Test 8: place_id 경계값 (빈 문자열 차단) ──────────────────────────────────
 
-def test_place_id_zero_raises():
+def test_place_id_empty_string_raises():
     """
-    place_id=0은 Field(ge=1)에 의해 ValidationError.
+    place_id=""는 Field(min_length=1)에 의해 ValidationError.
 
-    WHY: SQLite PK는 1부터 시작하므로 0은 존재하지 않는 레코드.
-    place_id=0이 통과하면 SQLite 조회 시 "장소 없음" 오류가 서비스 레이어에서 발생.
-    Guardrails에서 미리 막는 게 올바른 설계.
+    WHY: place_id가 빈 문자열로 통과하면 SQLite 조회 시 "장소 없음" 오류가
+    서비스 레이어에서 발생. Guardrails에서 미리 막는 게 올바른 설계.
     """
     bad_place = valid_place()
-    bad_place["place_id"] = 0
+    bad_place["place_id"] = ""
     with pytest.raises(ValidationError):
         StreamingCourseModel.model_validate(valid_course([bad_place]))

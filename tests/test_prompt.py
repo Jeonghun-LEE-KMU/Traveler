@@ -173,7 +173,7 @@ def _make_context(user_query: str) -> ContextData:
         weather="맑음",
         candidate_spots=[
             SpotCandidate(
-                place_id=1,
+                place_id="1",
                 place_name="불국사",
                 category="관광",
                 distance_min=15.0,
@@ -231,9 +231,13 @@ def test_sprint4_prompt_forbids_ungrounded_place_generation():
 
 
 def test_sprint4_prompt_requires_time_budget_check():
+    """
+    [v2.1 — 2026-08-09] 이동시간 데이터(Tmap) 없이 GPT가 이동시간을 추정하던
+    지시를 제거했다(Issue #15). 이제 체류시간 합계만 가용 시간과 대조한다.
+    """
     prompt = get_system_prompt("장거리")
 
-    assert "총 체류시간과 이동시간의 합" in prompt
+    assert "총 체류시간이 가용 시간을 넘지 않는지" in prompt
     assert "가용 시간" in prompt
 
 
