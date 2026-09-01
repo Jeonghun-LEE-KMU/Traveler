@@ -213,16 +213,22 @@ async def add_visited(session_id: str, place_ids: list) -> None:
 
 async def get_visited(session_id: str) -> set:
     """방문 장소 조회 — Redis 우선, miss 시 SQLite 복원."""
+    redis_ok = False
     try:
         r = get_redis()
         key = f"trip:{session_id}:visited"
         members = await r.smembers(key)
+        redis_ok = True
         if members:
             return members
     except Exception as e:
         logger.warning("[Redis] visited 조회 실패: %s", e)
 
-    # Redis miss -> SQLite fallback
+    if redis_ok and not members:
+        # Redis 정상 접속됐고 실제로 데이터 없는 세션 → SQLite 왕복 불필요
+        return set()
+
+    # Redis miss(장애) -> SQLite fallback
     logger.info("[Session] Redis miss, SQLite에서 visited 복원: session=%s", session_id)
     visited = await asyncio.to_thread(_sqlite_load_visited, session_id)
 

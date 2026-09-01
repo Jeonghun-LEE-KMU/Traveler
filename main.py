@@ -55,6 +55,7 @@ app.add_middleware(
 # 대화 히스토리 in-memory (Sprint 5에서 SQLite로 전환 예정)
 memory_store: dict = {}
 
+
 def get_session_history(s_id: str) -> ChatMessageHistory:
     if s_id not in memory_store:
         memory_store[s_id] = ChatMessageHistory()
