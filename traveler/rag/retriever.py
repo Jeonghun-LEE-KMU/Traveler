@@ -97,11 +97,11 @@ def search_places(
             )
             filtered.append((spot, r))
 
-        # 장거리 모드: Tmap searchPoiAlong으로 경로 상 POI 추가
-        if dest_lat is not None and dest_lon is not None:
-            filtered = _merge_tmap_results(
-                filtered, lat, lon, dest_lat, dest_lon, visited
-            )
+        # 장거리 모드 Tmap 병합: /api/chat에 dest_lat/dest_lon 파라미터 추가 후 활성화 예정
+        # if dest_lat is not None and dest_lon is not None:
+        #     filtered = _merge_tmap_results(
+        #         filtered, lat, lon, dest_lat, dest_lon, visited
+        #     )
 
         if not filtered:
             logger.warning("[Retriever] GPS 필터 후 결과 없음, fallback 사용")

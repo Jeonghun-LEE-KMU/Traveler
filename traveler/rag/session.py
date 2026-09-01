@@ -29,7 +29,8 @@ import redis.asyncio as aioredis
 logger = logging.getLogger(__name__)
 
 REDIS_URL   = os.getenv("REDIS_URL", "redis://localhost:6379")
-DB_PATH     = os.getenv("PLACES_DB_PATH", "data/places.db")
+from traveler.rag.hybrid_search import DEFAULT_DB_PATH
+DB_PATH     = os.getenv("PLACES_DB_PATH", str(DEFAULT_DB_PATH))
 TTL_SECONDS = 60 * 60 * 24  # 24시간
 
 _redis: Optional[aioredis.Redis] = None
@@ -108,7 +109,7 @@ def _sqlite_load_visited(session_id: str) -> set:
         ).fetchone()
         conn.close()
         if row and row[0]:
-            return set(json.loads(row[0]))
+            return {str(v) for v in json.loads(row[0])}
     except Exception as e:
         logger.warning("[SQLite] load_visited 실패: %s", e)
     return set()
@@ -177,7 +178,7 @@ def _sqlite_close_session(session_id: str) -> None:
         conn = sqlite3.connect(DB_PATH)
         conn.execute("""
             UPDATE trip_session
-            SET status = 'completed', updated_at = ?
+            SET status = 'completed', recommended_places = NULL, context = NULL, updated_at = ?
             WHERE session_id = ?
         """, (_now_iso(), session_id))
         conn.commit()

@@ -190,7 +190,7 @@ async def chat_endpoint(
 @app.post("/api/session/{session_id}/visited")
 async def add_visited_places(
         session_id: str,
-        place_ids: list = Body(..., example=["1", "3", "7"]),
+        place_ids: list[str] = Body(..., example=["1", "3", "7"]),
 ):
     """코스 확정 시 방문 장소 등록 (이후 추천에서 제외)"""
     await add_visited(session_id, place_ids)
