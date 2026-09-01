@@ -20,9 +20,11 @@ WHY 이 스크립트가 필요한가:
   # 실행 예시: python scripts/smoke_test.py
   # 실제 GPT-4o 응답을 보려면: export OPENAI_API_KEY=... 후 재실행
 
-주의: retriever.py는 Sprint 1 DUMMY라 duration_hours=4, transport="자차"가 내부에
-  하드코딩돼 있다. user_query에 "5시간"이라 써도 ctx.duration_hours는 4로 고정된다
-  (Sprint 3에서 이수연 실제 RAG로 교체될 부분 — 이 스크립트의 범위 밖).
+주의(2026-08-26 PM 리뷰 반영 — 실제 코드로 재확인): retriever.py는 이미 Pinecone
+  실검색이고(embedding 실패 시에만 _fallback_spots() 3곳으로 폴백), hybrid_search.py는
+  쓰지 않고 자체 Pinecone 호출을 한다(#21). get_context()는 duration_hours/transport를
+  아예 채우지 않으므로 user_query에 "5시간"이라 써도 types.py의 dataclass 기본값
+  duration_hours=3, transport="자차"가 그대로 들어간다.
 """
 
 import asyncio
@@ -51,8 +53,8 @@ async def run() -> None:
     print(f"[입력 시나리오] {SCENARIO}")
     print("=" * 60)
 
-    # 1단계: RAG 컨텍스트 (현재 DUMMY — 경주 5개 장소 하드코딩)
-    ctx = get_context(user_query=SCENARIO)
+    # 1단계: RAG 컨텍스트 (Pinecone 실검색. embedding 실패 시에만 _fallback_spots() 3곳)
+    ctx, _ = get_context(user_query=SCENARIO)
     print("\n[1단계] get_context() → ContextData")
     print(json.dumps(asdict(ctx), ensure_ascii=False, indent=2))
 

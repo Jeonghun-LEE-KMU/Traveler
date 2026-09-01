@@ -225,6 +225,37 @@ async def test_generate_course_malformed_json_returns_fallback(mock_get_client):
     assert course.recommended_places[0].place_id == "1"
 
 
+# ── Test 7b: fallback이 int place_id도 안전하게 str로 감싸는지 ───────────────
+
+@patch("traveler.core.course_generator.get_client")
+async def test_fallback_casts_int_place_id_to_str(mock_get_client):
+    """
+    [PM 리뷰 반영 — 2026-08-26, #29] retriever.py가 아직 place_id를 int로
+    채우는 경로가 남아있다(#18 진행 중). candidate_spots가 있을 때 fallback이
+    그 값을 그대로 RecommendedPlaceModel(place_id: str)에 넣으면
+    ValidationError가 except 블록 안에서 새로 터져 generate_course() 밖으로
+    전파된다 — Graceful Degradation의 최후 방어선이 뚫리는 것. str() 캐스팅이
+    이걸 막는지 확인한다.
+    """
+    broken_json = '{"bot_message": "경주 코스를 추천'   # 닫는 괄호 없이 잘림
+    chunks = [_chunk(broken_json)]
+    _mock_client_with_chunks(mock_get_client, chunks)
+
+    int_spot = SpotCandidate(
+        place_id=1,  # retriever.py의 현재 버그를 흉내냄(str이어야 하는데 int)
+        place_name="불국사",
+        category="관광",
+        distance_min=20.0,
+        indoor=False,
+    )
+    ctx = minimal_ctx(candidate_spots=[int_spot])
+
+    course = await generate_course(ctx)
+
+    assert "문제가 있었" in course.bot_message
+    assert course.recommended_places[0].place_id == "1"
+
+
 # ── Test 8: 계절(L2)이 today 주입값 기준으로 메시지에 포함되는지 ──────────────
 
 def test_season_included_with_injected_today():
