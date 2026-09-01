@@ -25,11 +25,11 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
+from traveler.rag.hybrid_search import DEFAULT_DB_PATH
 
 logger = logging.getLogger(__name__)
 
 REDIS_URL   = os.getenv("REDIS_URL", "redis://localhost:6379")
-from traveler.rag.hybrid_search import DEFAULT_DB_PATH
 DB_PATH     = os.getenv("PLACES_DB_PATH", str(DEFAULT_DB_PATH))
 TTL_SECONDS = 60 * 60 * 24  # 24시간
 
