@@ -1,0 +1,146 @@
+[
+  {
+    "id": "TR_Q01_gyeongju_history",
+    "query": "경주에서 역사 유적지 중심으로 여행하고 싶어",
+    "region": "경주",
+    "content_types": [12, 14],
+    "preferences": {
+      "companion": "",
+      "mood": "역사,전통,문화",
+      "travel_mode": ""
+    },
+    "expected_keywords": ["불국사", "첨성대", "동궁", "월지", "대릉원", "석굴암"]
+  },
+  {
+    "id": "TR_Q02_seoul_indoor_culture",
+    "query": "서울에서 비 오는 날 실내로 갈 만한 문화시설 추천해줘",
+    "region": "서울",
+    "content_types": [14, 38, 39],
+    "preferences": {
+      "companion": "",
+      "mood": "실내,문화,전시,카페",
+      "travel_mode": ""
+    },
+    "expected_keywords": ["서울역사박물관", "대한민국역사박물관", "국립현대미술관", "코엑스", "교보문고", "전시"]
+  },
+  {
+    "id": "TR_Q03_seoul_date_night",
+    "query": "서울에서 데이트하기 좋은 야경 명소랑 감성 카페 추천해줘",
+    "region": "서울",
+    "content_types": [12, 14, 39],
+    "preferences": {
+      "companion": "커플",
+      "mood": "데이트,야경,감성,카페",
+      "travel_mode": ""
+    },
+    "expected_keywords": ["남산", "한강", "광화문광장", "석촌호수", "서울숲", "카페"]
+  },
+  {
+    "id": "TR_Q04_seoul_history_walk",
+    "query": "서울에서 역사 분위기 느끼면서 산책할 수 있는 곳 알려줘",
+    "region": "서울",
+    "content_types": [12, 14],
+    "preferences": {
+      "companion": "",
+      "mood": "역사,전통,산책,문화",
+      "travel_mode": ""
+    },
+    "expected_keywords": ["경복궁", "북촌한옥마을", "광화문", "덕수궁", "대한민국역사박물관", "서울역사박물관"]
+  },
+  {
+    "id": "TR_Q05_gapyeong_nature",
+    "query": "가평에서 자연 풍경 좋고 산책하기 좋은 곳 추천해줘",
+    "region": "가평",
+    "content_types": [12],
+    "preferences": {
+      "companion": "",
+      "mood": "자연,숲,산책,힐링",
+      "travel_mode": "근교"
+    },
+    "expected_keywords": ["아침고요수목원", "자라섬", "남이섬", "쁘띠프랑스", "청평호", "수목원"]
+  },
+  {
+    "id": "TR_Q06_gapyeong_family",
+    "query": "가평에서 가족이랑 아이 데리고 가기 좋은 곳 알려줘",
+    "region": "가평",
+    "content_types": [12, 14],
+    "preferences": {
+      "companion": "가족",
+      "mood": "자연,체험,아이",
+      "travel_mode": "근교"
+    },
+    "expected_keywords": ["아침고요수목원", "자라섬", "남이섬", "쁘띠프랑스", "에델바이스", "청평"]
+  },
+  {
+    "id": "TR_Q07_yangpyeong_relaxed",
+    "query": "양평에서 여유롭게 산책하고 카페도 갈 수 있는 코스 추천해줘",
+    "region": "양평",
+    "content_types": [12, 39],
+    "preferences": {
+      "companion": "",
+      "mood": "여유,산책,카페,자연",
+      "travel_mode": "근교"
+    },
+    "expected_keywords": ["두물머리", "세미원", "용문산", "물소리길", "카페", "강"]
+  },
+  {
+    "id": "TR_Q08_yangpyeong_drive",
+    "query": "양평으로 드라이브 가서 자연 보고 밥 먹기 좋은 곳 추천해줘",
+    "region": "양평",
+    "content_types": [12, 39],
+    "preferences": {
+      "companion": "",
+      "mood": "드라이브,자연,맛집",
+      "travel_mode": "근교"
+    },
+    "expected_keywords": ["두물머리", "세미원", "용문산", "황순원문학촌", "식당", "카페"]
+  },
+  {
+    "id": "TR_Q09_namyangju_cafe_nature",
+    "query": "남양주에서 자연 뷰 좋고 카페 가기 좋은 곳 추천해줘",
+    "region": "남양주",
+    "content_types": [12, 39],
+    "preferences": {
+      "companion": "",
+      "mood": "자연,뷰,카페,힐링",
+      "travel_mode": "근교"
+    },
+    "expected_keywords": ["물의정원", "다산", "정약용", "북한강", "카페", "팔당"]
+  },
+  {
+    "id": "TR_Q10_namyangju_history_walk",
+    "query": "남양주에서 역사도 보고 산책하기 좋은 곳 추천해줘",
+    "region": "남양주",
+    "content_types": [12, 14],
+    "preferences": {
+      "companion": "",
+      "mood": "역사,산책,자연",
+      "travel_mode": "근교"
+    },
+    "expected_keywords": ["정약용", "다산", "물의정원", "홍유릉", "실학박물관", "팔당"]
+  },
+  {
+    "id": "TR_Q11_paju_art_culture",
+    "query": "파주에서 예술이나 책 관련해서 감성 있게 갈 만한 곳 알려줘",
+    "region": "파주",
+    "content_types": [12, 14, 39],
+    "preferences": {
+      "companion": "",
+      "mood": "예술,책,감성,카페",
+      "travel_mode": "근교"
+    },
+    "expected_keywords": ["헤이리", "출판도시", "지혜의숲", "예술", "책방", "카페"]
+  },
+  {
+    "id": "TR_Q12_paju_family_outing",
+    "query": "파주에서 가족 나들이로 갈 만한 관광지 추천해줘",
+    "region": "파주",
+    "content_types": [12, 14],
+    "preferences": {
+      "companion": "가족",
+      "mood": "가족,나들이,체험,자연",
+      "travel_mode": "근교"
+    },
+    "expected_keywords": ["임진각", "평화누리", "헤이리", "마장호수", "프로방스", "출판도시"]
+  }
+]

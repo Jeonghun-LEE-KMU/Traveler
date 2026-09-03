@@ -1,0 +1,98 @@
+[
+  {
+    "id": "HO_Q01_gyeongju_rainy_date",
+    "query": "비 오는 날 경주에서 데이트하기 좋은 실내 코스 추천해줘",
+    "region": "경주",
+    "content_types": [14, 38, 39],
+    "preferences": {
+      "companion": "커플",
+      "mood": "실내,데이트,카페,문화",
+      "travel_mode": ""
+    },
+    "expected_keywords": ["경주예술의전당", "신라역사과학관", "한국대중음악박물관", "경주다방", "카페", "전시"]
+  },
+  {
+    "id": "HO_Q02_gyeongju_parents_history_food",
+    "query": "부모님이랑 경주에서 역사 유적 보고 식사하기 좋은 코스 추천해줘",
+    "region": "경주",
+    "content_types": [12, 14, 39],
+    "preferences": {
+      "companion": "가족",
+      "mood": "역사,전통,식사",
+      "travel_mode": "자차"
+    },
+    "expected_keywords": ["불국사", "석굴암", "첨성대", "대릉원", "교동집밥", "황남비빔밥"]
+  },
+  {
+    "id": "HO_Q03_seoul_family_indoor",
+    "query": "서울에서 아이랑 가기 좋은 실내 문화시설 추천해줘",
+    "region": "서울",
+    "content_types": [14],
+    "preferences": {
+      "companion": "가족",
+      "mood": "실내,문화,아이",
+      "travel_mode": ""
+    },
+    "expected_keywords": ["국립중앙박물관", "서울역사박물관", "대한민국역사박물관", "어린이", "박물관", "전시"]
+  },
+  {
+    "id": "HO_Q04_seoul_friend_night_cafe",
+    "query": "서울에서 친구랑 야경 보고 카페 가기 좋은 코스 알려줘",
+    "region": "서울",
+    "content_types": [12, 39],
+    "preferences": {
+      "companion": "친구",
+      "mood": "야경,카페,감성",
+      "travel_mode": ""
+    },
+    "expected_keywords": ["남산", "한강", "석촌호수", "서울숲", "카페", "광화문광장"]
+  },
+  {
+    "id": "HO_Q05_gapyeong_activity_nature",
+    "query": "가평에서 자연도 보고 활동적으로 놀 수 있는 곳 추천해줘",
+    "region": "가평",
+    "content_types": [12, 14],
+    "preferences": {
+      "companion": "친구",
+      "mood": "자연,활동적,체험",
+      "travel_mode": "근교"
+    },
+    "expected_keywords": ["자라섬", "아침고요수목원", "남이섬", "청평", "산장관광지", "자연휴양림"]
+  },
+  {
+    "id": "HO_Q06_yangpyeong_cafe_nature",
+    "query": "양평에서 자연 보고 조용한 카페 들르는 코스 추천해줘",
+    "region": "양평",
+    "content_types": [12, 39],
+    "preferences": {
+      "companion": "",
+      "mood": "자연,카페,여유",
+      "travel_mode": "근교"
+    },
+    "expected_keywords": ["두물머리", "세미원", "용문산", "수풀로", "서후리숲", "카페"]
+  },
+  {
+    "id": "HO_Q07_namyangju_river_view",
+    "query": "남양주에서 북한강 뷰 보면서 쉬기 좋은 곳 추천해줘",
+    "region": "남양주",
+    "content_types": [12, 39],
+    "preferences": {
+      "companion": "",
+      "mood": "자연,뷰,카페,힐링",
+      "travel_mode": "근교"
+    },
+    "expected_keywords": ["물의정원", "북한강", "팔당", "다산", "카페", "물맑음수목원"]
+  },
+  {
+    "id": "HO_Q08_paju_book_cafe",
+    "query": "파주에서 책 구경하고 카페 가기 좋은 코스 알려줘",
+    "region": "파주",
+    "content_types": [12, 14, 39],
+    "preferences": {
+      "companion": "",
+      "mood": "책,카페,감성",
+      "travel_mode": "근교"
+    },
+    "expected_keywords": ["출판도시", "지혜의숲", "문발리헌책방골목", "헤이리", "카페", "책방"]
+  }
+]
