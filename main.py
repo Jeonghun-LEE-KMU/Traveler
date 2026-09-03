@@ -10,6 +10,7 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from langchain_core.messages import SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
@@ -129,8 +130,14 @@ async def chat_endpoint(
             )
 
             # 정훈 system prompt (모드별 JSON 출력 강제)
+            # ⚠️ 주의: 시스템 프롬프트를 ("system", 문자열) 튜플로 넣으면 LangChain이
+            # f-string 템플릿으로 파싱을 시도한다. 프롬프트 안 JSON 예시의 중괄호
+            # ({"bot_message": ...})가 변수 자리로 오인돼 항상
+            # "Invalid format specifier in f-string template"로 죽었다(main.py
+            # 자체 버그, Sprint 7 이전부터 존재 — git show 612074c:main.py로 확인).
+            # SystemMessage로 감싸면 템플릿 파싱을 건너뛰고 문자열 그대로 쓴다.
             rag_prompt = ChatPromptTemplate.from_messages([
-                ("system", get_system_prompt(mode_kr)),
+                SystemMessage(content=get_system_prompt(mode_kr)),
                 MessagesPlaceholder(variable_name="chat_history"),
                 ("human", "{user_message}"),
             ])
