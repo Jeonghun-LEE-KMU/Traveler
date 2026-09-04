@@ -94,6 +94,8 @@ def search_places(
                 category=r.category,
                 distance_min=distance_min,
                 indoor=r.indoor,
+                lat=r.lat,
+                lng=r.lng,
             )
             filtered.append((spot, r))
 

@@ -48,7 +48,12 @@ app.include_router(proxy_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:4173", "http://localhost:4173"],
+    allow_origins=[
+        "https://traveler-map.kr",
+        "https://www.traveler-map.kr",
+        "http://127.0.0.1:4173",
+        "http://localhost:4173",
+    ],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -166,15 +171,21 @@ async def chat_endpoint(
             # 스트리밍 완료 후 Pydantic 검증
             try:
                 validated = StreamingCourseModel.model_validate_json(full_text)
+                spot_map = {s.place_id: s for s in candidate_spots}
                 recommended = [
-                    {"place_id": p.place_id, "visit_sequence": p.visit_sequence}
+                    {
+                        "place_id": p.place_id,
+                        "visit_sequence": p.visit_sequence,
+                        "lat": spot_map[p.place_id].lat if p.place_id in spot_map else 0.0,
+                        "lng": spot_map[p.place_id].lng if p.place_id in spot_map else 0.0,
+                    }
                     for p in validated.recommended_places
                 ]
                 logger.info("[Chat] 검증 성공: %d개 장소", len(recommended))
             except Exception as e:
                 logger.warning("[Chat] 검증 실패, Pinecone fallback 사용: %s | full_text[:200]=%s", e, full_text[:200])
                 recommended = [
-                    {"place_id": s.place_id, "visit_sequence": i + 1}
+                    {"place_id": s.place_id, "visit_sequence": i + 1, "lat": s.lat, "lng": s.lng}
                     for i, s in enumerate(candidate_spots)
                 ]
 
