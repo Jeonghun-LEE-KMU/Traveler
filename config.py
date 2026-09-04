@@ -20,3 +20,7 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 
 # Sprint 5 추가 (Tmap 장거리 경로 POI 검색)
 TMAP_APP_KEY = os.getenv("TMAP_APP_KEY")
+
+# 프록시 라우터 (네이버 Directions)
+NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
+NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")

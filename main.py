@@ -25,6 +25,7 @@ from config import (
     MDCLTURSMSERVICE_API_KEY,
 )
 from traveler.api.weather import get_weather
+from traveler.api.proxy import router as proxy_router
 from traveler.core.prompt import get_system_prompt, build_context_message
 from traveler.rag.retriever import get_context as rag_get_context
 from traveler.rag.session import (
@@ -43,6 +44,7 @@ from traveler.validation.schema import StreamingCourseModel
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="TRAVELER_Mobility_RAG_Hub_Production")
+app.include_router(proxy_router)
 
 app.add_middleware(
     CORSMiddleware,
