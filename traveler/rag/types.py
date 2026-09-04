@@ -39,6 +39,8 @@ class SpotCandidate:
     category: str        # 카테고리 (예: "관광", "음식", "체험", "휴식")
     distance_min: float  # 현재 GPS 기준 Tmap 이동 시간 (분)
     indoor: bool         # 실내 여부 (날씨 제약 판단에 사용)
+    lat: float = 0.0     # 장소 위도 (Pinecone 메타데이터 재사용 — #27)
+    lng: float = 0.0     # 장소 경도 (Pinecone 메타데이터 재사용 — #27)
 
 
 @dataclass

@@ -12,11 +12,15 @@ TARRITETARSERVICE_API_KEY= os.getenv("TARRITETARSERVICE_API_KEY")
 MDCLTURSMSERVICE_API_KEY = os.getenv("MDCLTURSMSERVICE_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Sprint 2 추가
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+# Sprint 5: Redis 제거 → PostgreSQL(RDS) 단일 저장
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:traveler@localhost:5432/traveler")
 
 # Sprint 3 예정 (Pinecone 연결 시 사용)
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 
 # Sprint 5 추가 (Tmap 장거리 경로 POI 검색)
 TMAP_APP_KEY = os.getenv("TMAP_APP_KEY")
+
+# 프록시 라우터 (네이버 Directions)
+NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
+NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
