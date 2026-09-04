@@ -91,8 +91,8 @@ python-logging-loki==0.3.1
 # 설명: FastAPI 서버가 돌아가면서 발생하는 에러나 유저 요청 로그를 중앙 서버로 쏴주는 백엔드 모니터링 필수 패키지
 
 # ========================================
-# [9] Cache — Redis (Sprint 2 추가)
+# [9] Database — PostgreSQL (Sprint 5: Redis 제거 후 RDS 단일 저장)
 # ========================================
-redis>=5.0.0
-# 역할: Redis 비동기 클라이언트 (redis.asyncio 포함)
-# 설명: trip_session visited SET + 누적 선호도 prefs HASH 저장. TTL 24h.
+psycopg2-binary>=2.9.9
+# 역할: PostgreSQL 클라이언트
+# 설명: trip_session 세션 저장. RDS PostgreSQL 연결.

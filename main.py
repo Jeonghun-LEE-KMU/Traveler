@@ -46,8 +46,8 @@ app = FastAPI(title="TRAVELER_Mobility_RAG_Hub_Production")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,  # allow_origins=["*"]와 allow_credentials=True 조합은 브라우저 거부
+    allow_origins=["http://127.0.0.1:4173", "http://localhost:4173"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -227,15 +227,10 @@ async def clear_session_data(session_id: str):
 
 @app.get("/health")
 async def health_check():
-    """서버 + Redis 연결 상태 확인"""
-    from traveler.rag.session import get_redis
-    redis_status = "disconnected"
-    try:
-        await get_redis().ping()
-        redis_status = "connected"
-    except Exception:
-        pass
+    """서버 + DB 연결 상태 확인"""
+    from traveler.rag.session import _check_db
+    db_status = "connected" if await asyncio.to_thread(_check_db) else "disconnected"
     return {
         "status": "ok",
-        "redis": redis_status,
+        "db": db_status,
     }

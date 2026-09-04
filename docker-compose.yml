@@ -1,25 +1,31 @@
 # ============================================================
 # TRAVELER 로컬 개발 환경
-# Sprint 2: Redis (trip_session) 추가
+# Sprint 5: Redis 제거 → PostgreSQL 단일 저장으로 전환
 #
 # 실행: docker compose up -d
 # 종료: docker compose down
-# Redis CLI 접속: docker exec -it traveler-redis redis-cli
+# psql 접속: docker exec -it traveler-db psql -U postgres -d traveler
 # ============================================================
 
 version: '3.9'
 
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: traveler-redis
+  db:
+    image: postgres:15-alpine
+    container_name: traveler-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: traveler
+      POSTGRES_DB: traveler
     ports:
-      - "6379:6379"
-    # --save "" --appendonly no: 디스크 저장 비활성화
-    # trip_session은 24h TTL이라 영속화 불필요, 메모리만 사용
-    command: redis-server --save "" --appendonly no
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 3s
       retries: 5
+
+volumes:
+  pgdata:
