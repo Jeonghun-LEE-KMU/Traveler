@@ -11,7 +11,9 @@ WHY 이 테스트가 필요한가:
   평이한 sync def로 .companion 필드 하나만 검증한다(테스트 1개 = 검증 1개).
 """
 
-from traveler.rag.retriever import get_context
+from unittest.mock import patch
+
+from traveler.rag.retriever import DEFAULT_TOP_K, get_context
 
 
 def test_get_context_fills_companion_from_query():
@@ -30,3 +32,27 @@ def test_get_context_no_companion_fills_empty():
     """동승자 미언급 query → companion이 빈 문자열 ""로 채워지는지 확인."""
     ctx = get_context(user_query="맛집 추천해줘")
     assert ctx.companion == ""
+
+
+# ── #31 PM 리뷰 8번: get_context()의 top_k 패스스루 ──────────────────────────
+# WHY mock이 필요한가: search_places()가 hybrid_search 실패 시 _fallback_spots()
+# (고정 개수 더미)로 빠지는데, 그건 top_k를 아예 무시한다. "get_context()가
+# top_k를 search_places()에 제대로 전달하는가"라는 배선(wiring) 자체를 검증하려면
+# search_places를 직접 관찰해야 한다 — 실제 랭킹 결과 개수를 세는 통합 테스트가
+# 아니다.
+
+def test_get_context_forwards_top_k_to_search_places():
+    with patch("traveler.rag.retriever.search_places") as mock_search:
+        mock_search.return_value = []
+        get_context(user_query="아무거나", top_k=20)
+
+    assert mock_search.call_args.kwargs["top_k"] == 20
+
+
+def test_get_context_default_top_k_unchanged():
+    """top_k를 안 넘기면 기존과 동일하게 DEFAULT_TOP_K가 쓰인다(회귀 0)."""
+    with patch("traveler.rag.retriever.search_places") as mock_search:
+        mock_search.return_value = []
+        get_context(user_query="아무거나")
+
+    assert mock_search.call_args.kwargs["top_k"] == DEFAULT_TOP_K

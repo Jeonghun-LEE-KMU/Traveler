@@ -285,3 +285,69 @@ def test_all_few_shot_json_examples_match_course_schema(
     assert len(json_blocks) == expected_json_examples
     for block in json_blocks:
         StreamingCourseModel.model_validate(json.loads(block))
+
+
+# ── Sprint 7: refinement 주입 (D12, edit_intent.revise_course의 regenerate_all) ──
+
+def test_build_context_message_injects_refinement_when_provided():
+    """
+    refinement가 주어지면 "[추가 요청 ...]" 구획 안에 그대로 포함되는지 확인.
+
+    WHY: revise_course()의 regenerate_all 인텐트가 사용자 후속 발화를 그대로
+    refinement로 넘긴다(D12). 여기서 프롬프트에 실제로 반영되지 않으면 발표 핵심
+    시연 5종 중 하나가 사용자 말을 무시하는 결과가 된다.
+    """
+    ctx = _make_context("경주 여행 추천해줘")
+    msg = build_context_message(ctx, refinement="카페 중심으로 다시 짜줘")
+
+    assert "카페 중심으로 다시 짜줘" in msg
+    assert "[추가 요청 " in msg
+    assert "[추가 요청 끝]" in msg
+
+
+def test_build_context_message_omits_refinement_section_when_none():
+    """refinement가 None이면 "[추가 요청 ...]" 구획 자체가 생략되는지 확인(회귀 0, D12)."""
+    ctx = _make_context("경주 여행 추천해줘")
+    msg = build_context_message(ctx)
+
+    assert "[추가 요청 " not in msg
+
+
+# ── #31 PM 리뷰 8번: spot_limit — 프롬프트 노출 개수와 후보 풀 크기 분리 ──────────
+
+def _make_context_with_n_spots(n: int) -> ContextData:
+    return ContextData(
+        user_query="경주 여행 추천해줘",
+        current_lat=37.5665,
+        current_lng=126.9780,
+        weather="맑음",
+        candidate_spots=[
+            SpotCandidate(
+                place_id=str(i),
+                place_name=f"장소{i}",
+                category="관광",
+                distance_min=10.0,
+                indoor=False,
+            )
+            for i in range(1, n + 1)
+        ],
+    )
+
+
+def test_build_context_message_spot_limit_truncates_listed_candidates():
+    """spot_limit=10이면 후보 풀이 20개여도 프롬프트엔 앞 10개만 나열된다."""
+    ctx = _make_context_with_n_spots(20)
+    msg = build_context_message(ctx, spot_limit=10)
+
+    assert "장소10" in msg
+    assert "장소11" not in msg
+    assert "장소20" not in msg
+
+
+def test_build_context_message_spot_limit_none_lists_all_candidates():
+    """spot_limit 생략(None)이면 기존과 동일하게 전부 나열(회귀 0 — smoke_test.py,
+    eval/run_judge.py 등 기존 호출부는 이 파라미터를 안 넘긴다)."""
+    ctx = _make_context_with_n_spots(20)
+    msg = build_context_message(ctx)
+
+    assert "장소20" in msg

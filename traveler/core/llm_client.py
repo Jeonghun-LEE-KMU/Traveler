@@ -25,6 +25,10 @@ MODEL = "gpt-4o"        # 코스 생성용 (Phase 2~3)
 # 지금 여기에 선언해두면 Phase 8에서 import만 추가하면 됨.
 JUDGE_MODEL = "gpt-4o"  # Phase 8: 골든셋 평가 + 회귀 테스트용
 
+# WHY gpt-4o가 아니라 mini인가: 멀티턴 수정 인텐트 분류(edit_intent.py)는 5종 분류 +
+# 대상 식별이라 gpt-4o-mini로 충분하고 저지연이 필수다(CLAUDE.md 모델 선택 기준표).
+INTENT_MODEL = "gpt-4o-mini"  # Sprint 7: 멀티턴 수정 인텐트 분류용
+
 # ⚠️ 주의: 모듈 레벨에서 즉시 초기화하지 않음 (Lazy Init 패턴)
 # 즉시 초기화하면 import 시점에 API 키를 읽어 테스트 환경에서 에러 발생
 _client: AsyncOpenAI | None = None
