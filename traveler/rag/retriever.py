@@ -234,7 +234,6 @@ def get_context(
     top_k: int = DEFAULT_TOP_K,
     dest_lat: float | None = None,
     dest_lon: float | None = None,
-    top_k: int = DEFAULT_TOP_K,
 ) -> tuple:
     if visited is None:
         visited = set()
@@ -251,7 +250,6 @@ def get_context(
         top_k=top_k,
         dest_lat=dest_lat,
         dest_lon=dest_lon,
-        top_k=top_k,
     )
 
     context_data = ContextData(
