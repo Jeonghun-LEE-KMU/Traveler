@@ -73,10 +73,6 @@ def search_places(
 
     try:
         region = extract_region(user_query)
-        # 지역 명시 시 GPS 반경 필터 무효화:
-        # 사용자 GPS가 경주가 아닌 서울이어도 경주 장소가 잘리지 않도록.
-        # hybrid_search의 region 파라미터가 지역 필터를 담당한다.
-        effective_radius = float("inf") if region else radius_km
         raw_results = hybrid_search_places(
             user_query=user_query,
             preferences=prefs or None,
@@ -84,15 +80,17 @@ def search_places(
             top_k=top_k * 5,
             region=region,
         )
-        logger.info("[Retriever] hybrid_search 결과: %d건 (region=%s, radius=%.0f)", len(raw_results), region, effective_radius)
+        logger.info("[Retriever] hybrid_search 결과: %d건 (region=%s)", len(raw_results), region)
 
         # GPS 반경 필터 + (SpotCandidate, raw_result) 튜플 생성
+        # main.py의 detect_region_coords가 이미 lat/lon을 지역 좌표로 갱신하므로
+        # 반경은 그대로 유지 — region 감지 여부와 무관하게 radius_km 적용.
         filtered: list[tuple[SpotCandidate, object]] = []
         for r in raw_results:
             if r.lat == 0.0 and r.lng == 0.0:
                 continue
             dist_km = _haversine(lat, lon, r.lat, r.lng)
-            if dist_km > effective_radius:
+            if dist_km > radius_km:
                 continue
             distance_min = round(dist_km, 1)  # 60km/h 기준 1km = 1분, dist_km == distance_min
             spot = SpotCandidate(
