@@ -110,8 +110,13 @@ _TRAVEL_MODE_KEYWORDS: list[tuple[str, str]] = [
 def extract_prefs_from_message(message: str) -> dict:
     prefs: dict = {}
 
+    # 프론트가 "동행자: 가족\n...\n요청: 친구랑 ..." 형식으로 보내는 경우,
+    # UI 선택값(동행자 줄)보다 직접 입력한 요청 줄이 우선한다.
+    # "요청:" 이후 텍스트가 있으면 그 부분에서만 companion을 추출한다.
+    companion_source = message.split("요청:", 1)[-1] if "요청:" in message else message
+
     for keyword, value in _COMPANION_KEYWORDS:
-        if keyword in message:
+        if keyword in companion_source:
             prefs["companion"] = value
             break
 
