@@ -258,6 +258,11 @@ async def chat_endpoint(
         if region_name:
             logger.info("[Chat] region=%s lat=%.4f lon=%.4f", region_name, _rlat, _rlon)
             lat, lon = _rlat, _rlon
+        elif session_id in _session_courses:
+            # "다른 코스 추천" 등 지역명 없이 재호출 시 이전 코스 좌표 유지
+            _, _prev_ctx, _ = _session_courses[session_id]
+            lat, lon = _prev_ctx.current_lat, _prev_ctx.current_lng
+            logger.info("[Chat] region 미감지 → 이전 세션 좌표 재사용 lat=%.4f lon=%.4f", lat, lon)
         weather, visited, prefs = await asyncio.gather(
             get_weather(lat, lon),
             get_visited(session_id),

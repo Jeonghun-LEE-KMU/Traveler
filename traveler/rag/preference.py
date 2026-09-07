@@ -2,8 +2,65 @@
 사용자 선호도 추출 & 프롬프트 주입 모듈
 
 LLM 호출 없이 키워드 매칭으로 선호도 추출 (비용/속도 최적화)
-추출한 선호도는 session.py를 통해 Redis에 누적
+추출한 선호도는 session.py를 통해 PostgreSQL에 누적
 """
+
+# 광역 + 주요 시/군 단위 지역 매핑
+# hybrid_search.detect_region은 광역 17개만 지원 → 여기서 시/군 단위 보완
+_REGION_KEYWORDS: list[tuple[str, str]] = [
+    # 경상북도
+    ("경주", "경주"),
+    ("안동", "안동"),
+    ("포항", "포항"),
+    ("구미", "구미"),
+    ("영주", "영주"),
+    ("경산", "경산"),
+    # 경상남도
+    ("통영", "통영"),
+    ("거제", "거제"),
+    ("여수", "전남"),      # 전남으로 fallback
+    ("밀양", "밀양"),
+    ("창원", "창원"),
+    ("김해", "김해"),
+    # 강원
+    ("강릉", "강릉"),
+    ("속초", "속초"),
+    ("춘천", "춘천"),
+    ("평창", "평창"),
+    ("정선", "정선"),
+    ("인제", "인제"),
+    # 전라북도
+    ("전주", "전주"),
+    ("남원", "남원"),
+    ("군산", "군산"),
+    # 전라남도
+    ("여수", "여수"),
+    ("순천", "순천"),
+    ("담양", "담양"),
+    ("보성", "보성"),
+    ("구례", "구례"),
+    ("하동", "하동"),
+    # 충청
+    ("청주", "청주"),
+    ("공주", "공주"),
+    ("부여", "부여"),
+    # 제주
+    ("서귀포", "서귀포"),
+    # 광역시 (hybrid_search에도 있지만 중복 안전)
+    ("수원", "경기"),
+    ("용인", "경기"),
+]
+
+
+def extract_region(message: str) -> str | None:
+    """
+    사용자 메시지에서 지역명 추출.
+    hybrid_search.detect_region이 광역 17개만 지원하므로 시/군 단위 보완.
+    """
+    for keyword, region in _REGION_KEYWORDS:
+        if keyword in message:
+            return region
+    return None
 
 _COMPANION_KEYWORDS: list[tuple[str, str]] = [
     ("유아", "가족(유아)"),
@@ -53,8 +110,13 @@ _TRAVEL_MODE_KEYWORDS: list[tuple[str, str]] = [
 def extract_prefs_from_message(message: str) -> dict:
     prefs: dict = {}
 
+    # 프론트가 "동행자: 가족\n...\n요청: 친구랑 ..." 형식으로 보내는 경우,
+    # UI 선택값(동행자 줄)보다 직접 입력한 요청 줄이 우선한다.
+    # "요청:" 이후 텍스트가 있으면 그 부분에서만 companion을 추출한다.
+    companion_source = message.split("요청:", 1)[-1] if "요청:" in message else message
+
     for keyword, value in _COMPANION_KEYWORDS:
-        if keyword in message:
+        if keyword in companion_source:
             prefs["companion"] = value
             break
 

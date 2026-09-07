@@ -23,7 +23,7 @@ import psycopg2.extras
 
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:traveler@localhost:5432/traveler")
 
 
 def _get_conn():
