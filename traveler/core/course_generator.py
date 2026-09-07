@@ -34,9 +34,14 @@ def _build_fallback(ctx: ContextData) -> StreamingCourseModel:
     # WHY: 파싱이 깨져도 generate_course()는 항상 유효한 StreamingCourseModel을
     # 반환해야 한다(Graceful Degradation). candidate_spots가 있으면 그중
     # 첫 번째 place_id를 쓰고, 없으면 "1"을 쓴다(recommended_places는 min_length=1).
+    # ⚠️ 주의(PM 리뷰 반영, #29): retriever.py가 아직 place_id를 int로 채우는
+    # 경로가 남아있다(#18 — 이수연 진행 중). str()로 감싸지 않으면 이 fallback
+    # 자체가 RecommendedPlaceModel(place_id: str) 검증에서 ValidationError로
+    # 죽어 Graceful Degradation의 최후 방어선이 뚫린다. #18이 int를 완전히
+    # 없애도 이 캐스팅은 무해하게 남는다.
     """
     fallback_place_id = (
-        ctx.candidate_spots[0].place_id if ctx.candidate_spots else "1"
+        str(ctx.candidate_spots[0].place_id) if ctx.candidate_spots else "1"
     )
     return StreamingCourseModel(
         bot_message=FALLBACK_BOT_MESSAGE,
@@ -51,6 +56,7 @@ async def generate_course(
     travel_mode: str = "타지",
     *,
     temperature: float = 0.3,
+    refinement: str | None = None,
 ) -> StreamingCourseModel:
     """
     여행 컨텍스트를 받아 GPT-4o 스트리밍으로 코스를 생성하고 Pydantic으로 검증한다.
@@ -60,6 +66,10 @@ async def generate_course(
     #         temperature — keyword-only, 기본값 0.3(프로덕션 동작 무변경).
     #           Sprint 5 eval 파이프라인(eval/run_judge.py)이 재현성 확보를 위해
     #           0을 명시적으로 전달하는 용도로 노출됐다(D3, 설계 spec §5.2).
+    #         refinement — keyword-only, 기본값 None(무변경). Sprint 7
+    #           edit_intent.revise_course()가 "전체재생성" 인텐트에서 사용자의
+    #           후속 발화("카페 중심으로 다시 짜줘")를 그대로 전달한다(D12,
+    #           2026-08-30 설계 spec §6). 그대로 build_context_message로 흘려보낸다.
     # OUTPUT: StreamingCourseModel — Pydantic 검증 완료된 코스 객체
     # COST:   GPT-4o 기준 입력 $2.5/1M, 출력 $10/1M 토큰
     # ⚠️ 주의: travel_mode는 Sprint 6 Router 구현 전까지 호출부에서 직접 전달
@@ -71,7 +81,7 @@ async def generate_course(
     travel_mode = normalize_travel_mode(travel_mode)
     # WHY build_context_message? TravelRequest가 아닌 ContextData를 프롬프트로 변환.
     # 이 함수가 두 팀의 경계면(이수연 ↔ 정훈)을 이어주는 브릿지 역할.
-    user_message = build_context_message(ctx)
+    user_message = build_context_message(ctx, refinement=refinement)
     t_start = time.time()
 
     # WHY get_system_prompt(travel_mode)?

@@ -1,0 +1,98 @@
+[
+  {
+    "id": "TX_Q01_paju_retro_book",
+    "query": "파주에서 레트로하고 책 구경하기 좋은 조용한 곳 가고 싶어",
+    "region": "파주",
+    "content_types": [12, 14, 39],
+    "preferences": {
+      "companion": "혼자",
+      "mood": "레트로,책,조용,감성",
+      "travel_mode": "근교"
+    },
+    "expected_keywords": ["출판", "책", "서점", "박물관", "헤이리", "카페", "레트로", "조용"]
+  },
+  {
+    "id": "TX_Q02_namyangju_water_view",
+    "query": "남양주에서 물멍하면서 쉬기 좋은 뷰 좋은 카페나 산책 장소 알려줘",
+    "region": "남양주",
+    "content_types": [12, 39],
+    "preferences": {
+      "companion": "",
+      "mood": "물멍,뷰,카페,산책,여유",
+      "travel_mode": "근교"
+    },
+    "expected_keywords": ["물의정원", "북한강", "팔당", "카페", "뷰", "전망", "산책"]
+  },
+  {
+    "id": "TX_Q03_yangpyeong_quiet_drive",
+    "query": "양평에서 사람 적고 조용히 드라이브하다가 쉬기 좋은 곳 찾고 있어",
+    "region": "양평",
+    "content_types": [12, 39],
+    "preferences": {
+      "companion": "",
+      "mood": "사람 적은,조용,드라이브,휴식",
+      "travel_mode": "근교"
+    },
+    "expected_keywords": ["두물머리", "세미원", "북한강", "남한강", "카페", "산책", "공원"]
+  },
+  {
+    "id": "TX_Q04_seoul_mapo_sensuous_exhibit",
+    "query": "서울 마포 쪽에서 감각적인 전시 보고 편하게 머물 수 있는 곳 추천해줘",
+    "region": "서울",
+    "content_types": [14, 39],
+    "preferences": {
+      "companion": "",
+      "mood": "감각적인,전시,문화,카페",
+      "travel_mode": ""
+    },
+    "expected_keywords": ["전시", "미술관", "갤러리", "문화", "카페", "마포", "홍대"]
+  },
+  {
+    "id": "TX_Q05_seoul_yongsan_rain_alone",
+    "query": "비 오는 날 용산 근처에서 혼자 조용히 시간 보내기 좋은 실내 장소 알려줘",
+    "region": "서울",
+    "content_types": [14, 38, 39],
+    "preferences": {
+      "companion": "혼자",
+      "mood": "비오는날,조용,실내,혼자",
+      "travel_mode": ""
+    },
+    "expected_keywords": ["박물관", "전시", "서점", "카페", "실내", "용산", "아이파크몰"]
+  },
+  {
+    "id": "TX_Q06_gapyeong_less_crowded_forest",
+    "query": "가평에서 너무 붐비지 않고 숲 느낌 나는 힐링 장소 추천해줘",
+    "region": "가평",
+    "content_types": [12, 39],
+    "preferences": {
+      "companion": "",
+      "mood": "붐비지 않는,숲,힐링,자연",
+      "travel_mode": "근교"
+    },
+    "expected_keywords": ["수목원", "휴양림", "숲", "정원", "자연", "카페", "힐링"]
+  },
+  {
+    "id": "TX_Q07_gyeongju_photo_traditional",
+    "query": "경주에서 사진 잘 나오고 고즈넉한 전통 분위기 장소 가고 싶어",
+    "region": "경주",
+    "content_types": [12, 14, 39],
+    "preferences": {
+      "companion": "",
+      "mood": "사진,고즈넉한,전통,감성",
+      "travel_mode": ""
+    },
+    "expected_keywords": ["교촌마을", "한옥", "황리단길", "월정교", "첨성대", "대릉원", "전통"]
+  },
+  {
+    "id": "TX_Q08_paju_kids_budget_indoor",
+    "query": "파주에서 아이랑 비싸지 않게 실내에서 체험할 만한 곳 있을까",
+    "region": "파주",
+    "content_types": [14],
+    "preferences": {
+      "companion": "가족",
+      "mood": "비싸지 않은,실내,체험,아이",
+      "travel_mode": "근교"
+    },
+    "expected_keywords": ["아이", "체험", "박물관", "전시", "어린이", "실내", "파주"]
+  }
+]

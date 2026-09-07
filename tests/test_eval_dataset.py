@@ -38,14 +38,15 @@ def all_cases() -> list[GoldenCase]:
     return load_cases(CASES_PATH)
 
 
-def test_thirty_cases_total(all_cases: list[GoldenCase]):
-    assert len(all_cases) == 30
+def test_sixty_cases_total(all_cases: list[GoldenCase]):
+    """[Sprint 7 — 30→60 확장] 모드별 10→20개로 늘어 총 60개."""
+    assert len(all_cases) == 60
 
 
-def test_exactly_ten_cases_per_mode(all_cases: list[GoldenCase]):
+def test_exactly_twenty_cases_per_mode(all_cases: list[GoldenCase]):
     counts = Counter(c.mode for c in all_cases)
     for mode in MODES:
-        assert counts[mode] == 10, f"{mode} 케이스가 10개가 아님: {counts[mode]}"
+        assert counts[mode] == 20, f"{mode} 케이스가 20개가 아님: {counts[mode]}"
 
 
 def test_no_duplicate_case_ids(all_cases: list[GoldenCase]):
@@ -54,9 +55,9 @@ def test_no_duplicate_case_ids(all_cases: list[GoldenCase]):
 
 
 def test_all_cases_build_context_data(all_cases: list[GoldenCase]):
-    """30개 전부 ContextData 복원에 성공했는지(로더가 이미 이걸 하지만,
+    """60개 전부 ContextData 복원에 성공했는지(로더가 이미 이걸 하지만,
     복원된 타입이 실제로 ContextData인지 명시적으로 재확인)."""
-    assert len(all_cases) == 30
+    assert len(all_cases) == 60
     for case in all_cases:
         assert isinstance(case.ctx, ContextData)
         # 필수 필드가 비어있지 않은지도 함께 확인(로더가 필드명을 잘못
@@ -119,7 +120,7 @@ def test_rain_or_snow_with_family_covered_at_least_twice_per_mode(all_cases, mod
 
 
 @pytest.mark.parametrize("mode", MODES)
-def test_mode_filter_returns_exactly_ten(mode):
+def test_mode_filter_returns_exactly_twenty(mode):
     filtered = load_cases(CASES_PATH, mode=mode)
-    assert len(filtered) == 10
+    assert len(filtered) == 20
     assert all(c.mode == mode for c in filtered)
