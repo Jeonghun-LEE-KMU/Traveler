@@ -253,6 +253,11 @@ async def chat_endpoint(
         data: {"bot_message": "", "recommended_places": [{"place_id": 1, "visit_sequence": 1}, ...]}
     """
     try:
+        from traveler.core.region import detect_region_coords
+        region_name, _rlat, _rlon = detect_region_coords(user_message)
+        if region_name:
+            logger.info("[Chat] region=%s lat=%.4f lon=%.4f", region_name, _rlat, _rlon)
+            lat, lon = _rlat, _rlon
         weather, visited, prefs = await asyncio.gather(
             get_weather(lat, lon),
             get_visited(session_id),
