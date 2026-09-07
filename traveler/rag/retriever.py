@@ -69,13 +69,16 @@ def search_places(
             설정 시 Tmap searchPoiAlong으로 경로 상 POI를 추가 탐색한다.
     """
     from traveler.rag.hybrid_search import search_places as hybrid_search_places
+    from traveler.rag.preference import extract_region
 
     try:
+        region = extract_region(user_query)
         raw_results = hybrid_search_places(
             user_query=user_query,
             preferences=prefs or None,
             visited_ids={str(v) for v in visited} if visited else None,
             top_k=top_k * 5,
+            region=region,
         )
         logger.info("[Retriever] hybrid_search 결과: %d건", len(raw_results))
 
