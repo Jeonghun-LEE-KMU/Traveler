@@ -270,6 +270,9 @@ async def chat_endpoint(
         )
         logger.info("[Chat] session=%s | weather=%s | visited=%d", session_id, weather, len(visited))
 
+        # "요청:" 이후 텍스트만 LLM user_query로 사용 (UI 선택값 "동행자: 친구" 등이 LLM을 혼란시키지 않도록)
+        llm_query = user_message.split("요청:", 1)[-1].strip() if "요청:" in user_message else user_message
+
         new_prefs = extract_prefs_from_message(user_message)
         if new_prefs:
             await update_prefs(session_id, new_prefs)
@@ -281,7 +284,7 @@ async def chat_endpoint(
         radius_km = RADIUS_BY_MODE[mode]
         context_data, _ = await asyncio.to_thread(
             rag_get_context,
-            user_message,
+            llm_query,
             lat,
             lon,
             weather,
