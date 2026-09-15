@@ -15,7 +15,7 @@ from datetime import date
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from traveler.core.course_generator import generate_course
+from traveler.core.course_generator import FALLBACK_BOT_MESSAGE, generate_course, parse_course
 from traveler.core.prompt import build_context_message
 from traveler.rag.types import ContextData, SpotCandidate
 
@@ -333,3 +333,61 @@ def test_companion_line_omitted_when_empty():
     msg = build_context_message(ctx)
 
     assert "동행자" not in msg
+
+
+# ── Test 12~15: parse_course() — #25 단일 검증/폴백 경로 ─────────────────────
+# WHY: eval/run_judge.py가 채점하는 generate_course()와 main.py::_stream_and_persist가
+# 이 함수 하나를 공유한다. 두 경로가 서로 다른 검증 기준을 쓰면 eval 점수와 실제
+# 서비스 동작이 어긋난다(#25) — 그 공유 지점 자체를 테스트한다.
+
+def test_parse_course_valid_json_returns_model_and_false():
+    """정상 JSON이면 (검증된 모델, False)를 반환하는지 확인."""
+    valid_json = (
+        '{"bot_message": "경주 코스를 추천해요", '
+        '"recommended_places": [{"place_id": "1", "visit_sequence": 1}]}'
+    )
+    ctx = minimal_ctx()
+
+    course, is_fallback = parse_course(valid_json, ctx)
+
+    assert is_fallback is False
+    assert course.bot_message == "경주 코스를 추천해요"
+    assert course.recommended_places[0].place_id == "1"
+
+
+def test_parse_course_invalid_json_returns_fallback_and_true():
+    """깨진 JSON이면 FALLBACK_BOT_MESSAGE를 담은 fallback과 True를 반환하는지 확인."""
+    ctx = minimal_ctx()
+
+    course, is_fallback = parse_course('{"bot_message": "잘림', ctx)
+
+    assert is_fallback is True
+    assert course.bot_message == FALLBACK_BOT_MESSAGE
+
+
+def test_parse_course_fallback_limit_slices_candidate_spots():
+    """
+    fallback_limit=3, candidate_spots 5개 → fallback이 앞 3개만, visit_sequence
+    1..3, place_name까지 채워서 반환하는지 확인.
+    """
+    ctx = minimal_ctx(
+        candidate_spots=[sample_spot(place_id=str(i)) for i in range(1, 6)]
+    )
+
+    course, is_fallback = parse_course("{broken", ctx, fallback_limit=3)
+
+    assert is_fallback is True
+    assert [p.visit_sequence for p in course.recommended_places] == [1, 2, 3]
+    assert [p.place_id for p in course.recommended_places] == ["1", "2", "3"]
+    assert all(p.place_name == "불국사" for p in course.recommended_places)
+
+
+def test_parse_course_no_candidates_yields_placeholder_place_id_1():
+    """candidate_spots가 없으면 자리표시자 place_id="1" 하나만 반환하는지 확인."""
+    ctx = minimal_ctx(candidate_spots=[])
+
+    course, is_fallback = parse_course("{broken", ctx)
+
+    assert is_fallback is True
+    assert len(course.recommended_places) == 1
+    assert course.recommended_places[0].place_id == "1"

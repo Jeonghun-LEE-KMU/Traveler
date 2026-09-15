@@ -111,7 +111,7 @@ def search_places(
         #     )
 
         if not filtered:
-            logger.warning("[Retriever] GPS 필터 후 결과 없음, fallback 사용")
+            logger.warning("[FALLBACK][Retriever] GPS 필터 후 결과 없음 — 하드코딩 3곳(경주 불국사·경주 첨성대·황남빵) 반환")
             return _fallback_spots()
 
         spots_by_id = {spot.place_id: spot for spot, _ in filtered}
@@ -143,7 +143,7 @@ def search_places(
         return final_spots
 
     except Exception as e:
-        logger.error("[Retriever] hybrid_search 실패, fallback 사용: %s", e)
+        logger.error("[FALLBACK][Retriever] hybrid_search 실패 — 하드코딩 3곳(경주 불국사·경주 첨성대·황남빵) 반환: %s", e)
         return _fallback_spots()
 
 

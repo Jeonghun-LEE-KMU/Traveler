@@ -23,3 +23,4 @@ traveler/data/places.db-journal
 traveler/data/csv/
 traveler/data/snapshots/
 traveler/data/test_result_csv/
+.omc/
