@@ -209,9 +209,9 @@ class _TmapDummy:
 
 def _fallback_spots() -> list[SpotCandidate]:
     return [
-        SpotCandidate(place_id="125266",  place_name="불국사",   category="관광", distance_min=5.0,  indoor=False, lat=35.7898, lng=129.3320),
-        SpotCandidate(place_id="126508",  place_name="첨성대",   category="관광", distance_min=12.0, indoor=False, lat=35.8348, lng=129.2189),
-        SpotCandidate(place_id="2733144", place_name="교리김밥", category="음식", distance_min=15.0, indoor=True, lat=35.8347, lng=129.2119),
+        SpotCandidate(place_id="126166",  place_name="경주 불국사", category="관광", distance_min=5.0,  indoor=False, lat=35.7923, lng=129.3317),
+        SpotCandidate(place_id="126207",  place_name="경주 첨성대", category="관광", distance_min=12.0, indoor=False, lat=35.8343, lng=129.2185),
+        SpotCandidate(place_id="2765063", place_name="황남빵",      category="음식", distance_min=15.0, indoor=True, lat=35.8409, lng=129.2137),
     ]
 
 

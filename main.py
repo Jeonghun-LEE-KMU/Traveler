@@ -186,8 +186,8 @@ async def _stream_and_persist(
                 {
                     "place_id": p.place_id,
                     "visit_sequence": p.visit_sequence,
-                    "lat": spot_map[p.place_id].lat if p.place_id in spot_map else 0.0,
-                    "lng": spot_map[p.place_id].lng if p.place_id in spot_map else 0.0,
+                    "lat": spot_map[p.place_id].lat if p.place_id in spot_map else None,
+                    "lng": spot_map[p.place_id].lng if p.place_id in spot_map else None,
                 }
                 for p in validated.recommended_places
             ]
