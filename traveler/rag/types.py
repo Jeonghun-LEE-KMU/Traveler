@@ -41,6 +41,12 @@ class SpotCandidate:
     indoor: bool         # 실내 여부 (날씨 제약 판단에 사용)
     lat: float = 0.0     # 장소 위도 (Pinecone 메타데이터 재사용 — #27)
     lng: float = 0.0     # 장소 경도 (Pinecone 메타데이터 재사용 — #27)
+    # ── 경주 특화 (2026-09-15) ──
+    # WHY: TourAPI 원문 그대로 보관 — <br> 정리 등 가공은 프롬프트 계층 책임(SRP).
+    use_time: str | None = None   # 영업/이용 시간 원문 (콘텐츠 유형별 컬럼 COALESCE 결과)
+    rest_date: str | None = None  # 휴무일 원문
+    event_start_date: str | None = None  # 축제 시작일 'YYYYMMDD' (content_type_id "15"만 채움)
+    event_end_date: str | None = None    # 축제 종료일 'YYYYMMDD' (content_type_id "15"만 채움)
 
 
 @dataclass
@@ -67,3 +73,4 @@ class ContextData:
     companion: str = "혼자"             # 동행자
     mood: str = ""                       # 분위기 힌트 (Pinecone 쿼리에서 추출)
     route_summary: str = ""             # Tmap 경로 요약 (선택)
+    region: str | None = None            # extract_region()이 감지한 지역명 (2026-09-15, 경주 특화)

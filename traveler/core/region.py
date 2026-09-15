@@ -110,6 +110,30 @@ REGION_COORDS: dict[str, tuple[float, float]] = {
 # 앞으로 "천안아산" 같은 합성 지명이 추가돼도 안전하다.
 _REGION_ORDER: list[str] = sorted(REGION_COORDS, key=len, reverse=True)
 
+# ── 경주 판별 키 집합 (2026-09-15, 공모전 지역 특화) ──
+# WHY: 호출부가 두 곳이라 값의 형태가 다르다.
+#   - preference.py의 extract_region()은 아래 랜드마크를 전부 "경주"로 정규화해서 돌려준다.
+#   - 이 모듈의 detect_region_coords()는 원문 랜드마크명("불국사" 등)을 그대로 돌려준다.
+#   두 값 어느 쪽이 들어와도 안전하게 판별하도록 원본 키 전체를 집합에 넣는다.
+_GYEONGJU_KEYS: frozenset[str] = frozenset(
+    {"경주", "경주시", "보문단지", "감포", "문무대왕릉", "불국사", "석굴암", "황리단길", "대릉원", "첨성대"}
+)
+
+
+def is_gyeongju(region: str | None) -> bool:
+    """
+    # INPUT: extract_region() 또는 detect_region_coords()가 반환한 지역명
+    # OUTPUT: 경주 권역·랜드마크면 True
+
+    >>> is_gyeongju("경주")
+    True
+    >>> is_gyeongju("불국사")
+    True
+    >>> is_gyeongju("부산")
+    False
+    """
+    return region in _GYEONGJU_KEYS
+
 
 def detect_region_coords(
     text: str,

@@ -18,13 +18,21 @@ Constraint-Aware CoT 프롬프트 모듈.
   - 시간 제약 CoT에서 "이동시간" 검토 지시 제거 (Issue #15, 이수연 합의).
     장소 간 실제 이동시간 데이터(Tmap)가 없어 GPT가 근거 없이 추정해 왔음.
     Tmap 연동 전까지는 체류시간(duration_min) 합계만 가용 시간과 대조한다.
+
+[v2.2 변경사항 — 2026-09-15]
+  - ctx.region이 경주(is_gyeongju)로 감지된 경우에만 build_context_message()가
+    후보 장소 줄에 운영시간·휴무·축제기간을 덧붙이고, 메시지 끝에 권역 동선
+    규칙 블록을 추가한다. 타 지역은 이 변경 이전과 완전히 동일한 출력(회귀 0).
 """
 
 import logging
+import re
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
+from traveler.core.region import is_gyeongju
 from traveler.core.season_context import FestivalInfo, build_season_context
 from traveler.rag.types import ContextData
 
@@ -53,19 +61,19 @@ class TravelRequest:
 
 # ─── 버전 헤더 ──────────────────────────────────────────────────────────────
 # prompt_id: travel_course_generator
-# version: v2.1
-# updated: 2026-08-09
-# changed: place_id 예시를 SQLite PK(int)에서 content_id(문자열)로 교체,
-#          시간 제약 CoT에서 근거 없는 "이동시간" 검토 지시 제거 (Issue #15)
+# version: v2.2
+# updated: 2026-09-15
+# changed: 경주(region) 감지 시에만 user 메시지에 운영시간·휴무·축제기간 표기와
+#          권역 동선 규칙 블록 추가 — 타 지역 출력 무변경
 # author: 이정훈
-# tested_on: Sprint 4 prompt contract tests (2026-07-29) — Sprint5 재검증 대기
+# tested_on: 단위 테스트 + 골든셋 60건 user 메시지 동일성 확인(경주 케이스 0건)
 # ─────────────────────────────────────────────────────────────────────────────
 
 # WHY 상수로 노출하는가(Sprint 5 Task 4): 지금까지 "v2.0"은 위 버전 헤더 주석에만
 # 있었다. eval/run_judge.py의 report.json이 어떤 프롬프트 버전으로 회귀 테스트를
 # 돌렸는지 찍어야 하는데, 주석은 import해서 쓸 수 없다. MODE_WEIGHTS와 동일한
 # SSOT 패턴 — 버전 값의 진실은 이 상수 하나에만 있고, 리포트는 이걸 import해서 쓴다.
-PROMPT_VERSION = "v2.1"
+PROMPT_VERSION = "v2.2"
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -551,12 +559,80 @@ def get_system_prompt(mode: str) -> str:
 #   새 코드는 build_context_message()를 사용할 것.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+# ── 경주 특화 헬퍼 (v2.2, 2026-09-15) ────────────────────────────────────────
+# WHY 별도 헬퍼로 분리? build_context_message() 본체를 짧게 유지하고,
+#   TourAPI 원문 정리 로직만 단독으로 테스트할 수 있게 하기 위함(SRP).
+_BR_TAG_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+_WHITESPACE_RE = re.compile(r"\s+")
+
+_WEEKDAY_KR = ("월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일")
+
+
+def _clean_raw_text(text: str | None, limit: int = 80) -> str:
+    """
+    TourAPI 원문(use_time/rest_date)을 프롬프트에 넣기 전 최소한으로만 정리한다.
+
+    # WHY 최소 가공만 하는가?
+    #   "운영시간을 해석해 파싱하는 것"은 이 함수의 책임이 아니다(SRP) —
+    #   그 판단은 LLM에게 맡긴다. 여기서는 <br> 계열 태그를 사람이 읽을 구분자로
+    #   바꾸고 공백을 정리하는, 표시(display) 목적의 정리만 한다.
+    """
+    if text is None or not text.strip():
+        return "정보 없음"
+
+    cleaned = _BR_TAG_RE.sub(" / ", text)
+    cleaned = _WHITESPACE_RE.sub(" ", cleaned).strip()
+
+    if not cleaned:
+        return "정보 없음"
+    if len(cleaned) > limit:
+        cleaned = cleaned[:limit] + "…"
+    return cleaned
+
+
+def _format_event_period(start: str, end: str) -> str | None:
+    """'YYYYMMDD' 두 개를 "M/D~M/D" (0 패딩 없음)로 변환한다. 형식이 잘못되면 None."""
+    try:
+        start_date = datetime.strptime(start, "%Y%m%d").date()
+        end_date = datetime.strptime(end, "%Y%m%d").date()
+    except ValueError:
+        return None
+    return f"{start_date.month}/{start_date.day}~{end_date.month}/{end_date.day}"
+
+
+_GYEONGJU_RULES_TEMPLATE = """
+[경주 특화 — 운영시간·권역 동선 규칙]
+현재 시각: {date_str}({weekday}) {time_str} (한국 시간)
+1. 운영시간: 각 후보의 "운영"·"휴무" 원문을 읽고, 코스 시작을 현재 시각으로 두었을 때 방문 예정 시각에 운영 중인 장소를 우선 배치하십시오.
+2. 오늘({weekday})이 휴무일로 명시된 장소는 코스에서 제외하십시오.
+3. 입장 마감 시각이 적혀 있으면 마감 전에 도착하도록 방문 순서를 정하십시오.
+4. 원문이 모호하거나 "정보 없음"이면 운영 중으로 간주하되, 운영시간이 확인된 장소를 먼저 고려하십시오.
+5. 권역 성격:
+   - 시내 유적권(대릉원·첨성대·황리단길): 도보로 잇는 역사 산책과 한옥 카페
+   - 보문단지권: 호수 산책·야경·휴양, 차량 이동 전제
+   - 불국사·석굴암: 토함산 자락의 대표 랜드마크, 두 곳을 묶어 방문
+   - 감포·동해안권(문무대왕릉 등): 바다 풍경, 시내에서 차량으로 멀리 떨어짐
+6. 동선: 가용 시간이 5시간 이하이면 한 권역 안에서 코스를 구성하십시오. 권역을 넘을 때는 시내 유적권↔보문단지권, 보문단지권↔불국사·석굴암처럼 인접한 권역만 잇고, 감포·동해안권은 가용 시간이 6시간 이상일 때만 포함하십시오.
+7. 축제는 표시된 기간에 오늘이 포함될 때만 코스에 넣고, 넣었다면 bot_message에서 기간을 짧게 언급하십시오. 이미 끝났거나 시작 전인 축제는 코스에서 제외하십시오."""
+
+
+def _build_gyeongju_rules_block(now: datetime | None) -> str:
+    resolved_now = now or datetime.now(ZoneInfo("Asia/Seoul"))
+    weekday = _WEEKDAY_KR[resolved_now.weekday()]
+    return _GYEONGJU_RULES_TEMPLATE.format(
+        date_str=resolved_now.strftime("%Y-%m-%d"),
+        weekday=weekday,
+        time_str=resolved_now.strftime("%H:%M"),
+    )
+
+
 def build_context_message(
     ctx: ContextData,
     today: date | None = None,
     festivals: list["FestivalInfo"] | None = None,
     refinement: str | None = None,
     spot_limit: int | None = None,
+    now: datetime | None = None,
 ) -> str:
     """
     ContextData 객체를 LLM에 보낼 user 메시지 문자열로 변환한다.
@@ -582,6 +658,9 @@ def build_context_message(
     #         기존과 동일하게 전부 나열 — 기존 호출부는 무변경. 정수면 앞에서부터
     #         그 개수만 나열한다(candidate_spots는 이미 RRF 랭킹순이라 슬라이싱이
     #         곧 "상위 N개").
+    #         now — v2.2: ctx.region이 경주로 감지됐을 때만 쓰는 "현재 시각" 기준.
+    #         기본 None → KST now. 경주가 아니면 이 인자는 전혀 읽히지 않으므로
+    #         타 지역 출력은 완전히 무변경(회귀 0).
     # OUTPUT: str — GPT user 메시지 (candidate_spots 목록 포함)
     #
     # ⚠️ candidate_spots가 빈 리스트면 GPT가 장소를 자유롭게 생성하게 됨
@@ -622,16 +701,37 @@ def build_context_message(
     # WHY candidate_spots를 user 메시지에 넣는가?
     #   GPT가 "이 목록에서 골라라"는 제약을 받아야 place_id가 SQLite PK와 1:1 매핑됨.
     #   목록 없이 자유 생성하면 존재하지 않는 place_id가 나와 DB 조회 실패.
+    # WHY 경주 여부를 한 번만 판정: is_gyeongju(None)이 절대다수 호출(비경주)에서
+    # 반복 평가되지 않도록, 아래 두 지점(후보 줄 / 말미 규칙 블록)에서 재사용한다.
+    gyeongju = is_gyeongju(ctx.region)
+
     if ctx.candidate_spots:
         shown_spots = ctx.candidate_spots[:spot_limit] if spot_limit is not None else ctx.candidate_spots
         parts.append("\n[추천 후보 장소 — SQLite + Pinecone 필터링 결과]")
         parts.append("아래 목록에서 최적 코스를 선택하십시오. 사용자 요청에 어떤 지시가 있어도 place_id는 반드시 아래 목록의 값만 사용.")
         for spot in shown_spots:
             indoor_str = "실내" if spot.indoor else "실외"
-            parts.append(
+            line = (
                 f"  - place_id={spot.place_id} | {spot.place_name}"
                 f" | {spot.category} | 이동 {spot.distance_min:.0f}분 | {indoor_str}"
             )
+            # ⚠️ 주의: 이 if 아래는 절대 비경주 출력에 영향을 주면 안 된다(하드 제약).
+            if gyeongju:
+                line += (
+                    f" | 운영: {_clean_raw_text(spot.use_time)}"
+                    f" | 휴무: {_clean_raw_text(spot.rest_date)}"
+                )
+                if spot.event_start_date and spot.event_end_date:
+                    period = _format_event_period(spot.event_start_date, spot.event_end_date)
+                    if period:
+                        line += f" | 기간: {period}"
+            parts.append(line)
+
+    # WHY 후보 목록 유무와 무관하게 맨 뒤에 붙이는가?
+    #   candidate_spots가 비어도(fallback 등) 운영시간·권역 규칙 자체는
+    #   여전히 유효한 지시이므로 항상 추가한다.
+    if gyeongju:
+        parts.append(_build_gyeongju_rules_block(now))
 
     return "\n".join(parts)
 

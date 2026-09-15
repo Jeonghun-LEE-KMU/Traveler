@@ -265,25 +265,38 @@ async def chat_endpoint(
                "place_name": "...", "duration_min": 60, "lat": 35.79, "lng": 129.33}, ...]}
     """
     try:
+        # "요청:" 이후 텍스트만 LLM user_query로 사용 (UI 선택값 "동행자: 친구" 등이 LLM을 혼란시키지 않도록)
+        # WHY: 아래 region-carry 분기의 "다른/새로운/말고" 판단에도 필요해 extract_prefs보다
+        # 앞으로 옮겼다 — user_message에만 의존하는 순수 계산이라 순서를 옮겨도 안전하다.
+        llm_query = user_message.split("요청:", 1)[-1].strip() if "요청:" in user_message else user_message
+
         from traveler.core.region import detect_region_coords
         region_name, _rlat, _rlon = detect_region_coords(user_message)
+        fallback_region = None
+        extra_ids: set = set()
         if region_name:
             logger.info("[Chat] region=%s lat=%.4f lon=%.4f", region_name, _rlat, _rlon)
             lat, lon = _rlat, _rlon
         elif session_id in _session_courses:
-            # "다른 코스 추천" 등 지역명 없이 재호출 시 이전 코스 좌표 유지
-            _, _prev_ctx, _ = _session_courses[session_id]
-            lat, lon = _prev_ctx.current_lat, _prev_ctx.current_lng
-            logger.info("[Chat] region 미감지 → 이전 세션 좌표 재사용 lat=%.4f lon=%.4f", lat, lon)
+            # "다른 코스 추천" 등 지역명 없이 재호출 시 이전 코스 좌표 + 지역 유지
+            prev_course, prev_ctx, _ = _session_courses[session_id]
+            lat, lon = prev_ctx.current_lat, prev_ctx.current_lng
+            prev_region = prev_ctx.region
+            fallback_region = prev_region
+            # ⚠️ 주의: "실내로 바꿔줘"처럼 같은 코스를 다듬는 요청까지 이전 장소를
+            # 빼면 안 된다 — "다른/새로운/말고"로 명시적으로 새 코스를 원할 때만 제외한다.
+            if any(kw in llm_query for kw in ("다른", "새로운", "새로", "말고")):
+                extra_ids = {p.place_id for p in prev_course.recommended_places}
+            logger.info(
+                "[Chat] region 미감지 → 이전 세션 지역 재사용 region=%s exclude=%d",
+                prev_region, len(extra_ids),
+            )
         weather, visited, prefs = await asyncio.gather(
             get_weather(lat, lon),
             get_visited(session_id),
             get_prefs(session_id),
         )
         logger.info("[Chat] session=%s | weather=%s | visited=%d", session_id, weather, len(visited))
-
-        # "요청:" 이후 텍스트만 LLM user_query로 사용 (UI 선택값 "동행자: 친구" 등이 LLM을 혼란시키지 않도록)
-        llm_query = user_message.split("요청:", 1)[-1].strip() if "요청:" in user_message else user_message
 
         new_prefs = extract_prefs_from_message(user_message)
         if new_prefs:
@@ -300,10 +313,11 @@ async def chat_endpoint(
             lat,
             lon,
             weather,
-            visited,
+            visited | extra_ids,  # ⚠️ 주의: visited를 직접 수정(|=)하면 안 된다 — 이번 검색 한정 제외
             prefs,
             radius_km,
             top_k=CANDIDATE_POOL_SIZE,
+            fallback_region=fallback_region,
         )
         # #31 PM 리뷰 8번: candidate_spots는 20개(넓은 풀) — revise용으로 context_data에
         # 그대로 저장한다. 폴백 응답에 노출하는 건 상위 10개로 제한(fallback_limit=
