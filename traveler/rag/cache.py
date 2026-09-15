@@ -33,17 +33,33 @@ _memory_cache: dict[str, tuple[float, tuple[Any, ...]]] = {}
 
 _redis_client: Any | None = None
 _redis_disabled = False
+_redis_url_missing_logged = False
+
+def _prune_expired_memory_cache(now: float | None = None) -> None:
+    """만료된 memory cache 항목을 제거한다."""
+    current_time = now if now is not None else time.time()
+
+    expired_keys = [
+        key
+        for key, (expires_at, _) in _memory_cache.items()
+        if expires_at <= current_time
+    ]
+
+    for key in expired_keys:
+        _memory_cache.pop(key, None)
 
 
 def get_redis_client() -> Any | None:
     """Redis client를 lazy singleton으로 생성한다. 실패하면 메모리 캐시로 fallback한다."""
-    global _redis_client, _redis_disabled
+    global _redis_client, _redis_disabled, _redis_url_missing_logged
 
     if _redis_disabled:
         return None
 
     if not REDIS_URL:
-        logger.info("[search cache] REDIS_URL not set; using memory cache")
+        if not _redis_url_missing_logged:
+            logger.info("[search cache] REDIS_URL not set; using memory cache")
+            _redis_url_missing_logged = True
         return None
 
     if _redis_client is not None:
@@ -156,14 +172,18 @@ def set_cached_search_results(cache_key: str, results: list[Any]) -> None:
         except Exception as exc:
             logger.warning("[search cache] redis set failed; fallback to memory: %s", exc)
 
-    expires_at = time.time() + SEARCH_CACHE_TTL_SECONDS
+    now = time.time()
+    expires_at = now + SEARCH_CACHE_TTL_SECONDS
 
     if SEARCH_CACHE_MEMORY_MAX_SIZE <= 0:
         logger.info("[search cache] memory disabled")
         return
 
-    while len(_memory_cache) >= SEARCH_CACHE_MEMORY_MAX_SIZE:
-        _memory_cache.pop(next(iter(_memory_cache)))
+    _prune_expired_memory_cache(now)
+
+    if cache_key not in _memory_cache:
+        while len(_memory_cache) >= SEARCH_CACHE_MEMORY_MAX_SIZE:
+            _memory_cache.pop(next(iter(_memory_cache)))
 
     _memory_cache[cache_key] = (expires_at, payload)
     logger.info("[search cache] memory set")
