@@ -5,3 +5,21 @@ __pycache__/
 .DS_Store
 *.db
 *.backup_*
+
+# Local data audit / ETL artifacts
+db_audit_*.csv
+
+# Traveler local generated data artifacts
+traveler/data/active_places_snapshot_*.csv
+traveler/data/iconic_raw_signals_*.csv
+traveler/data/iconic_score_v2_preview.csv
+traveler/data/iconic_score_v2_snapshot_*.csv
+traveler/data/tar_rlte_raw_*.csv
+traveler/data/tar_rlte_match_report_*.csv
+traveler/data/tar_rlte_unmatched_top_*.csv
+traveler/data/places.db-journal
+
+# Local generated csv/result directories
+traveler/data/csv/
+traveler/data/snapshots/
+traveler/data/test_result_csv/
