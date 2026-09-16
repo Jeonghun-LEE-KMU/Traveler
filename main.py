@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 from typing import Literal
+import os
 
 from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -51,6 +52,14 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="TRAVELER_Mobility_RAG_Hub_Production")
 app.include_router(proxy_router)
+
+# 개발/부하테스트 전용 엔드포인트.
+# 기본값은 비활성화이며, ENABLE_DEV_ENDPOINTS=true일 때만 등록한다.
+# /api/chat 전체 경로와 달리 LLM을 호출하지 않고 검색 캐시 레이어만 검증하기 위한 용도다.
+if os.getenv("ENABLE_DEV_ENDPOINTS", "").lower() == "true":
+    from traveler.api.dev_search_cache import router as dev_search_cache_router
+
+    app.include_router(dev_search_cache_router)
 
 app.add_middleware(
     CORSMiddleware,
