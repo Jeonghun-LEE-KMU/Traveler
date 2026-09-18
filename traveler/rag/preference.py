@@ -128,6 +128,7 @@ _TRAVEL_MODE_KEYWORDS: list[tuple[str, str]] = [
 
 _DURATION_KEYWORDS: list[tuple[str, int]] = [
     ("하루 종일", 8),
+    ("당일치기", 8),
     ("종일", 8),
     ("하루", 7),
     ("반나절", 4),
