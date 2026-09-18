@@ -278,6 +278,7 @@ async def chat_endpoint(
             await update_prefs(session_id, new_prefs)
             prefs = {**prefs, **new_prefs}
 
+        logger.info("[Chat] companion=%s | llm_query=%s", prefs.get("companion"), llm_query[:80])
         visited_context = build_visited_context(visited)
 
         mode_kr = MODE_TO_KR.get(mode, "타지")
