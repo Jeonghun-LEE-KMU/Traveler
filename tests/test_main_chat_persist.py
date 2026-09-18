@@ -75,7 +75,7 @@ async def test_persist_runs_even_if_queue_never_consumed(monkeypatch):
     queue: asyncio.Queue = asyncio.Queue()
 
     # ★ 큐를 소비하는 코드가 어디에도 없다 — 클라이언트가 스트림을 끊은 상황과 동일
-    await main._stream_and_persist(queue, session_id, "근교", "컨텍스트", ctx, ctx.candidate_spots)
+    await main._stream_and_persist(queue, session_id, "근교", "컨텍스트", ctx)
 
     assert session_id in main._session_courses, "스트림 미소비 시 코스가 저장되지 않았다 (#31 10번 회귀)"
     course, saved_ctx, mode_kr = main._session_courses[session_id]
@@ -95,11 +95,16 @@ async def test_producer_finishes_with_sentinel(monkeypatch):
     ctx = _dummy_ctx()
     queue: asyncio.Queue = asyncio.Queue()
 
-    await main._stream_and_persist(queue, session_id, "근교", "컨텍스트", ctx, ctx.candidate_spots)
+    await main._stream_and_persist(queue, session_id, "근교", "컨텍스트", ctx)
 
     items = [queue.get_nowait() for _ in range(queue.qsize())]
     assert items[-1] is None
-    assert len(items) == len(_CHUNKS) + 2  # 텍스트 청크 + 최종 장소 청크 + 종료 신호
+    # #13 변경: 이제 원시 JSON 청크가 아니라 BotMessageExtractor가 걸러낸
+    # bot_message "디코딩된 텍스트"만 새로 드러날 때마다 큐에 들어간다. 이 고정
+    # JSON(_COURSE_JSON)을 20자 단위로 잘라 넣으면 bot_message 값이 초반 청크
+    # 안에서 다 드러나 텍스트 청크 2개만 생긴다(그 뒤는 JSON 문법뿐이라 내보낼 게
+    # 없음) — 텍스트 청크 2개 + 최종 장소 청크 + 종료 신호.
+    assert len(items) == 4
 
     main._session_courses.pop(session_id, None)
 
@@ -121,7 +126,7 @@ async def test_llm_failure_still_emits_sentinel(monkeypatch):
     ctx = _dummy_ctx()
     queue: asyncio.Queue = asyncio.Queue()
 
-    await main._stream_and_persist(queue, session_id, "근교", "컨텍스트", ctx, ctx.candidate_spots)
+    await main._stream_and_persist(queue, session_id, "근교", "컨텍스트", ctx)
 
     items = [queue.get_nowait() for _ in range(queue.qsize())]
     assert items[-1] is None
@@ -160,13 +165,15 @@ def test_chat_endpoint_streams_chunks_in_order(monkeypatch):
         for line in res.text.splitlines()
         if line.startswith("data: ")
     ]
-    # 텍스트 청크들이 순서대로 이어 붙으면 원본 JSON이 그대로 복원돼야 한다
-    assert "".join(p["bot_message"] for p in payloads) == _COURSE_JSON
+    # #13: 텍스트 청크들이 이어 붙으면 원본 JSON이 아니라 bot_message
+    # 필드의 "디코딩된 텍스트"만 복원돼야 한다 (JSON 문법 조각이 새어나가면 안 됨).
+    assert "".join(p["bot_message"] for p in payloads) == json.loads(_COURSE_JSON)["bot_message"]
+    assert all("{" not in p["bot_message"] for p in payloads)
     # 마지막 청크만 recommended_places를 담는다 (프론트가 의존하는 계약 — 변경 금지)
     assert payloads[-1]["bot_message"] == ""
     assert payloads[-1]["recommended_places"] == [
-        {"place_id": "126508", "visit_sequence": 1, "lat": 0.0, "lng": 0.0},
-        {"place_id": "126509", "visit_sequence": 2, "lat": 0.0, "lng": 0.0},
+        {"place_id": "126508", "visit_sequence": 1, "place_name": "불국사", "duration_min": None, "lat": 0.0, "lng": 0.0},
+        {"place_id": "126509", "visit_sequence": 2, "place_name": "첨성대", "duration_min": None, "lat": 0.0, "lng": 0.0},
     ]
     assert session_id in main._session_courses
 

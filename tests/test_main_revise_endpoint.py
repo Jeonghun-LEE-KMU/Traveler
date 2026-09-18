@@ -38,6 +38,38 @@ def _dummy_ctx() -> ContextData:
     )
 
 
+def test_revise_post_returns_lat_lng_from_candidate_spots(monkeypatch):
+    """#27 나머지: 응답의 lat/lng이 context_data.candidate_spots에서 조회된 값인지 확인."""
+    session_id = "test-revise-latlng"
+    ctx = ContextData(
+        user_query="경주 여행",
+        current_lat=35.8562,
+        current_lng=129.2247,
+        weather="맑음",
+        candidate_spots=[SpotCandidate("1", "불국사", "관광", 20.0, False, lat=35.79, lng=129.33)],
+    )
+    course = StreamingCourseModel(
+        bot_message="코스",
+        recommended_places=[RecommendedPlaceModel(place_id="1", visit_sequence=1, place_name="불국사")],
+    )
+    main._session_courses[session_id] = (course, ctx, "근교")
+
+    async def fake_revise_course(user_message, course, context_data, travel_mode, visited=None):
+        return StreamingCourseModel(
+            bot_message="수정했어요.",
+            recommended_places=[RecommendedPlaceModel(place_id="1", visit_sequence=1, place_name="불국사")],
+        )
+
+    monkeypatch.setattr(main, "revise_course", fake_revise_course)
+
+    res = client.post("/api/chat/revise", json={"user_message": "바꿔줘", "session_id": session_id})
+
+    assert res.status_code == 200
+    place = res.json()["recommended_places"][0]
+    assert place["lat"] == 35.79
+    assert place["lng"] == 129.33
+
+
 def test_revise_post_returns_place_name(monkeypatch):
     session_id = "test-revise-post"
     course = StreamingCourseModel(

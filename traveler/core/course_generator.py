@@ -27,28 +27,56 @@ logger = logging.getLogger(__name__)
 FALLBACK_BOT_MESSAGE = "죄송해요, 지금 코스를 만드는 데 문제가 있었어요. 잠시 후 다시 시도해주세요."
 
 
-def _build_fallback(ctx: ContextData) -> StreamingCourseModel:
+def _build_fallback(ctx: ContextData, limit: int = 1) -> StreamingCourseModel:
     """
     GPT 출력이 JSON 파싱/스키마 검증에 실패했을 때 반환하는 안전 응답.
 
     # WHY: 파싱이 깨져도 generate_course()는 항상 유효한 StreamingCourseModel을
     # 반환해야 한다(Graceful Degradation). candidate_spots가 있으면 그중
-    # 첫 번째 place_id를 쓰고, 없으면 "1"을 쓴다(recommended_places는 min_length=1).
+    # 앞에서부터 limit개를 순서대로 쓰고, 없으면 "1" 자리표시자 하나를 쓴다
+    # (recommended_places는 min_length=1).
     # ⚠️ 주의(PM 리뷰 반영, #29): retriever.py가 아직 place_id를 int로 채우는
     # 경로가 남아있다(#18 — 이수연 진행 중). str()로 감싸지 않으면 이 fallback
     # 자체가 RecommendedPlaceModel(place_id: str) 검증에서 ValidationError로
     # 죽어 Graceful Degradation의 최후 방어선이 뚫린다. #18이 int를 완전히
     # 없애도 이 캐스팅은 무해하게 남는다.
     """
-    fallback_place_id = (
-        str(ctx.candidate_spots[0].place_id) if ctx.candidate_spots else "1"
-    )
+    if not ctx.candidate_spots:
+        return StreamingCourseModel(
+            bot_message=FALLBACK_BOT_MESSAGE,
+            recommended_places=[RecommendedPlaceModel(place_id="1", visit_sequence=1)],
+        )
     return StreamingCourseModel(
         bot_message=FALLBACK_BOT_MESSAGE,
         recommended_places=[
-            RecommendedPlaceModel(place_id=fallback_place_id, visit_sequence=1)
+            RecommendedPlaceModel(
+                place_id=str(s.place_id), visit_sequence=i + 1, place_name=s.place_name or None
+            )
+            for i, s in enumerate(ctx.candidate_spots[:limit])
         ],
     )
+
+
+def parse_course(
+    full_text: str, ctx: ContextData, *, fallback_limit: int = 1
+) -> tuple[StreamingCourseModel, bool]:
+    """
+    GPT 출력 문자열을 검증하고, 실패하면 fallback으로 감싸 반환한다.
+
+    # WHY: generate_course()(eval/run_judge.py가 채점하는 대상)와 main.py의
+    # _stream_and_persist()가 각자 검증+fallback 로직을 따로 들고 있었다(#25).
+    # 이러면 eval이 채점하는 코스와 실제 서비스가 만드는 코스의 검증 기준이
+    # 서로 어긋날 수 있다. 이 함수 하나로 합쳐 둘 다 같은 경로를 타게 한다.
+    """
+    try:
+        return StreamingCourseModel.model_validate_json(full_text), False
+    except ValidationError as e:
+        logger.warning(
+            "[FALLBACK] 코스 검증 실패, fallback 사용: %s | full_text[:200]=%s",
+            e,
+            full_text[:200],
+        )
+        return _build_fallback(ctx, fallback_limit), True
 
 
 async def generate_course(
@@ -117,7 +145,7 @@ async def generate_course(
                 usage = chunk.usage
     except Exception as e:
         # ⚠️ 주의: 데모 중단 방지 — API 호출/스트리밍 오류는 로그로만 남기고 안전 응답으로 계속
-        logger.warning("API 호출 실패, fallback 사용: %s", e)
+        logger.warning("[FALLBACK] API 호출 실패, fallback 사용: %s", e)
         return _build_fallback(ctx)
 
     latency = time.time() - t_start
@@ -138,10 +166,7 @@ async def generate_course(
 
     # 스트리밍 완료 후 full_text는 완전한 JSON 문자열
     # Pydantic 검증 — JSON 문법 오류와 스키마 불일치 모두 ValidationError로 들어옴
-    try:
-        course = StreamingCourseModel.model_validate_json(full_text)
-    except ValidationError as e:
-        # ⚠️ 주의: 데모 중단 방지 — 원인은 로그로만 남기고 안전 응답으로 계속
-        logger.warning("코스 생성 실패, fallback 사용: %s", e)
-        course = _build_fallback(ctx)
+    # ⚠️ 주의: 데모 중단 방지 — 실패해도 parse_course()가 안전 응답으로 감싸 계속 진행한다.
+    # fallback_limit 기본값(1)을 그대로 둬 eval 채점 대상의 동작을 바꾸지 않는다.
+    course, _ = parse_course(full_text, ctx)
     return course

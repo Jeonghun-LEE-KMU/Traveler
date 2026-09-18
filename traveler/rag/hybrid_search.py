@@ -61,6 +61,12 @@ from pinecone import Pinecone
 
 from traveler.rag.embed import INDEX_NAME, embed_texts
 
+from traveler.rag.cache import (
+    get_cached_search_results,
+    make_search_cache_key,
+    set_cached_search_results,
+)
+
 
 load_dotenv()
 
@@ -824,6 +830,21 @@ def search_places(
         else detect_content_types(user_query)
     )
 
+    cache_key = make_search_cache_key(
+    user_query=user_query,
+    preferences=preferences,
+    visited_ids=visited_ids,
+    region=resolved_region,
+    content_types=resolved_types,
+    top_k=top_k,
+    db_path=db_path,
+    score_weights=weights,
+    )
+
+    cached_results = get_cached_search_results(cache_key)
+    if cached_results is not None:
+        return cached_results
+
     openai_client = get_openai_client()
     index = get_pinecone_index()
     query_vector = embed_texts(openai_client, [user_query])[0]
@@ -957,7 +978,10 @@ def search_places(
         )
 
     results.sort(key=lambda result: result.final_score, reverse=True)
-    return results[:top_k]
+
+    top_results = results[:top_k]
+    set_cached_search_results(cache_key, top_results)
+    return top_results
 
 
 def estimate_travel_minutes(
