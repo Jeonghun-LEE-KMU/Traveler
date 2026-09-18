@@ -5,6 +5,8 @@ LLM 호출 없이 키워드 매칭으로 선호도 추출 (비용/속도 최적�
 추출한 선호도는 session.py를 통해 PostgreSQL에 누적
 """
 
+import re
+
 # 광역 + 주요 시/군 단위 지역 매핑
 # hybrid_search.detect_region은 광역 17개만 지원 → 여기서 시/군 단위 보완
 _REGION_KEYWORDS: list[tuple[str, str]] = [
@@ -122,6 +124,35 @@ _TRAVEL_MODE_KEYWORDS: list[tuple[str, str]] = [
     ("관광", "타지"),
     ("투어", "타지"),
 ]
+
+
+_DURATION_KEYWORDS: list[tuple[str, int]] = [
+    ("하루 종일", 8),
+    ("종일", 8),
+    ("하루", 7),
+    ("반나절", 4),
+    ("오전", 3),
+    ("오후", 3),
+    ("저녁", 2),
+]
+_DURATION_RE = re.compile(r"(\d+)\s*시간")
+
+
+def extract_duration(message: str) -> int | None:
+    """
+    사용자 메시지에서 여행 가능 시간 추출.
+    - "5시간" → 5
+    - "반나절" → 4
+    - "하루" → 7
+    추출 실패 시 None (호출부가 기본값 결정).
+    """
+    m = _DURATION_RE.search(message)
+    if m:
+        return max(1, min(int(m.group(1)), 12))
+    for keyword, hours in _DURATION_KEYWORDS:
+        if keyword in message:
+            return hours
+    return None
 
 
 def extract_prefs_from_message(message: str) -> dict:
