@@ -239,6 +239,7 @@ def get_context(
     top_k: int = DEFAULT_TOP_K,
     dest_lat: float | None = None,
     dest_lon: float | None = None,
+    duration_hours: int = 5,
 ) -> tuple:
     if visited is None:
         visited = set()
@@ -265,6 +266,7 @@ def get_context(
         candidate_spots=spots,
         companion=prefs.get("companion", "혼자"),
         mood=prefs.get("mood", ""),
+        duration_hours=duration_hours,
     )
 
     return context_data, build_spots_context(spots)

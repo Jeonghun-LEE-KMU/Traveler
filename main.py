@@ -41,6 +41,7 @@ from traveler.rag.session import (
 from traveler.rag.preference import (
     extract_prefs_from_message,
     build_visited_context,
+    extract_duration,
 )
 from traveler.rag.types import ContextData
 from traveler.validation.schema import RecommendedPlaceModel, StreamingCourseModel
@@ -278,7 +279,8 @@ async def chat_endpoint(
             await update_prefs(session_id, new_prefs)
             prefs = {**prefs, **new_prefs}
 
-        logger.info("[Chat] companion=%s | llm_query=%s", prefs.get("companion"), llm_query[:80])
+        duration_hours = extract_duration(llm_query) or 5
+        logger.info("[Chat] companion=%s | duration=%dh | llm_query=%s", prefs.get("companion"), duration_hours, llm_query[:80])
         visited_context = build_visited_context(visited)
 
         mode_kr = MODE_TO_KR.get(mode, "타지")
@@ -293,6 +295,7 @@ async def chat_endpoint(
             prefs,
             radius_km,
             top_k=CANDIDATE_POOL_SIZE,
+            duration_hours=duration_hours,
         )
         # #31 PM 리뷰 8번: candidate_spots는 20개(넓은 풀) — revise용으로 context_data에
         # 그대로 저장한다. 폴백 응답에 노출하는 건 상위 10개로 제한(prompt_spots와 동일
