@@ -234,6 +234,13 @@ async def _stream_and_persist(
                 logger.info("[Chat] 검증 성공: %d개 장소", len(recommended))
             # D11: 후속 /api/chat/revise가 "지금 코스"를 찾을 수 있도록 저장.
             _session_courses[session_id] = (course, context_data, mode_kr)
+            # ── visited 자동 저장 (#37) ──────────────────────────────────────────
+            # 이번 turn에 추천한 장소를 바로 세션에 누적.
+            # 프론트가 POST /api/session/{id}/visited를 호출하지 않아도 다음 turn에서
+            # get_visited()가 이 장소들을 "이미 방문"으로 간주해 제외한다.
+            # fallback(place_id="1" 단독)이나 빈 코스는 저장하지 않는다.
+            if recommended:
+                await add_visited(session_id, [p["place_id"] for p in recommended])
 
         # ⚠️ 주의(PR #41 리뷰): bot_message 키가 스트림 끝까지 안 나온 경우(예: LLM이
         # recommended_places를 먼저 출력)에만 안전망을 태운다. streamed_any_text가
