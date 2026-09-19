@@ -192,7 +192,7 @@ def _check_regression(by_mode: dict, baseline_path: Path) -> tuple[dict, list[st
     Returns:
         (deltas, failures, notes)
         failures: baseline 대비 실제로 -0.3 이상 하락한 항목 — verdict를 FAIL로 만든다.
-        notes: 회귀 판정 자체를 할 수 없었던 사유(baseline 없음/손상) — FAIL은
+        notes: 회귀 판정 자체를 할 수 없었던 사유(baseline 없음/손상/평가 버전 불일치) — FAIL은
         아니지만 PASS로 조용히 넘기지도 않는다(호출부가 INCONCLUSIVE로 취급, PM 리뷰 반영).
     """
     if not baseline_path.exists():
@@ -204,14 +204,33 @@ def _check_regression(by_mode: dict, baseline_path: Path) -> tuple[dict, list[st
         logger.warning("baseline 파일 로드 실패, 델타 비교 생략: %s", e)
         return {}, [], [f"baseline 파일 손상({e}) — judge 델타 비교 생략"]
 
+    # 채점하지 않은 실행은 버전 비교도 필요 없다. 표본 누락은 호출부에서 판정한다.
+    if not any(
+        mean is not None for agg in by_mode.values() for mean in agg["axis_means"].values()
+    ):
+        return {}, [], []
+
+    metadata = baseline.get("_meta") if isinstance(baseline, dict) else None
+    baseline_version = metadata.get("judge_prompt_version") if isinstance(metadata, dict) else None
+    if baseline_version != JUDGE_PROMPT_VERSION:
+        return {}, [], [
+            f"baseline judge_prompt_version 불일치 또는 누락 "
+            f"({baseline_version!r} → {JUDGE_PROMPT_VERSION}) — "
+            "같은 judge 버전으로 기준 코스를 다시 평가해야 하므로 델타 비교 생략"
+        ]
+
     deltas: dict = {}
     failures: list[str] = []
+    notes: list[str] = []
     for mode, agg in by_mode.items():
         base_axis = baseline.get(mode, {})
         mode_deltas = {}
         for axis, current_mean in agg["axis_means"].items():
-            base_mean = base_axis.get(axis)
-            if current_mean is None or base_mean is None:
+            if current_mean is None:
+                continue
+            base_mean = base_axis.get(axis) if isinstance(base_axis, dict) else None
+            if base_mean is None:
+                notes.append(f"모드 {mode} 축 {axis}: baseline 점수 없음 — 회귀 판정 불가")
                 continue
             delta = round(current_mean - base_mean, 3)
             mode_deltas[axis] = delta
@@ -221,12 +240,13 @@ def _check_regression(by_mode: dict, baseline_path: Path) -> tuple[dict, list[st
                 )
         if mode_deltas:
             deltas[mode] = mode_deltas
-    return deltas, failures, []
+    return deltas, failures, notes
 
 
 def _save_baseline(by_mode: dict, baseline_path: Path) -> None:
-    """이번 실행의 모드별 judge axis 평균만 뽑아 baseline 파일로 저장한다."""
+    """모드별 judge axis 평균과 평가 기준 버전을 baseline 파일로 저장한다."""
     baseline = {mode: agg["axis_means"] for mode, agg in by_mode.items()}
+    baseline["_meta"] = {"judge_prompt_version": JUDGE_PROMPT_VERSION}
     baseline_path.parent.mkdir(parents=True, exist_ok=True)
     baseline_path.write_text(
         json.dumps(baseline, ensure_ascii=False, indent=2), encoding="utf-8"

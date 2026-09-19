@@ -8,12 +8,16 @@ eval/dataset.py + eval/cases.jsonl 골든셋 검증 — Sprint 5 Task 1.
 """
 
 from collections import Counter
+import json
 from pathlib import Path
 
 import pytest
 
 from eval.dataset import GoldenCase, load_cases
+from eval.judge_prompt import build_judge_user_message
+from traveler.core.prompt import build_context_message
 from traveler.rag.types import ContextData
+from traveler.validation.schema import RecommendedPlaceModel, StreamingCourseModel
 
 CASES_PATH = Path(__file__).resolve().parent.parent / "eval" / "cases.jsonl"
 
@@ -124,3 +128,99 @@ def test_mode_filter_returns_exactly_twenty(mode):
     filtered = load_cases(CASES_PATH, mode=mode)
     assert len(filtered) == 20
     assert all(c.mode == mode for c in filtered)
+
+
+def _load_single_case(tmp_path: Path, duration_fields: dict) -> GoldenCase:
+    ctx = {
+        "user_query": "경주 여행 추천해줘",
+        "current_lat": 35.8,
+        "current_lng": 129.2,
+        "weather": "맑음",
+        "candidate_spots": [
+            {
+                "place_id": "1",
+                "place_name": "첨성대",
+                "category": "관광",
+                "distance_min": 1.0,
+                "indoor": False,
+            }
+        ],
+        **duration_fields,
+    }
+    row = {
+        "case_id": "duration-contract",
+        "mode": "타지",
+        "today": "2026-09-19",
+        "ctx": ctx,
+        "expectations": {"expect_places_range": [1, 3]},
+        "tags": ["sunny", "solo", "short"],
+    }
+    path = tmp_path / "case.jsonl"
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    return load_cases(path)[0]
+
+
+@pytest.mark.parametrize("hours", (2, 4, 6))
+def test_loader_marks_omitted_duration_hours_min_as_fixed_explicit_hours(tmp_path, hours):
+    case = _load_single_case(tmp_path, {"duration_hours": hours})
+
+    assert case.ctx.duration_hours == hours
+    assert case.ctx.duration_hours_min is None
+
+
+def test_loader_marks_explicit_five_hour_value_as_fixed_hours(tmp_path):
+    case = _load_single_case(tmp_path, {"duration_hours": 5})
+
+    assert case.ctx.duration_hours == 5
+    assert case.ctx.duration_hours_min is None
+
+
+def test_loader_keeps_default_three_to_five_hours_when_duration_is_missing(tmp_path):
+    case = _load_single_case(tmp_path, {})
+
+    assert case.ctx.duration_minutes is None
+    assert case.ctx.duration_hours == 5
+    assert case.ctx.duration_hours_min == 3
+
+
+@pytest.mark.parametrize("duration_hours_min", (None, 2))
+def test_loader_preserves_explicit_duration_hours_min_range(tmp_path, duration_hours_min):
+    case = _load_single_case(
+        tmp_path,
+        {"duration_hours": 5, "duration_hours_min": duration_hours_min},
+    )
+
+    assert case.ctx.duration_hours_min == duration_hours_min
+
+
+def test_loader_preserves_duration_minutes_as_ssot(tmp_path):
+    case = _load_single_case(
+        tmp_path,
+        {"duration_minutes": 90, "duration_hours": 4, "duration_hours_min": None},
+    )
+
+    assert case.ctx.duration_minutes == 90
+    assert case.ctx.duration_hours == 4
+    assert case.ctx.duration_hours_min is None
+    expected = "가용 시간: 90분 (1.5시간)"
+    assert expected in build_context_message(case.ctx, today=case.today)
+    course = StreamingCourseModel(
+        bot_message="테스트 코스",
+        recommended_places=[RecommendedPlaceModel(place_id="1", visit_sequence=1)],
+    )
+    assert expected in build_judge_user_message(case.ctx, case.mode, course)
+
+
+def test_shipped_cases_keep_fixed_hours_in_generator_and_judge_messages(all_cases):
+    for case in all_cases:
+        assert case.ctx.duration_minutes is None
+        assert case.ctx.duration_hours_min is None
+        expected = f"가용 시간: {case.ctx.duration_hours}시간"
+        generator_message = build_context_message(case.ctx, today=case.today)
+        course = StreamingCourseModel(
+            bot_message="테스트 코스",
+            recommended_places=[RecommendedPlaceModel(place_id="1", visit_sequence=1)],
+        )
+        judge_message = build_judge_user_message(case.ctx, case.mode, course)
+        assert expected in generator_message
+        assert expected in judge_message

@@ -1,6 +1,6 @@
 # judge_prompt_id: course_quality_judge
-# version: v1.0
-# updated: 2026-08-03
+# version: v1.1
+# updated: 2026-09-19
 # author: 이정훈
 """
 LLM-as-Judge 5축 채점 프롬프트 — Sprint 5 Task 2.
@@ -18,13 +18,14 @@ halo effect 완화 장치 2개(JUDGE_SYSTEM_PROMPT에 반영):
      "좋다/나쁘다"만 주면 중심화 경향(3~4점 몰림)이 생겨 변별력이 사라진다.
 """
 
+from traveler.core.course_schedule import _valid_coordinate
 from traveler.rag.types import ContextData
 from traveler.validation.schema import StreamingCourseModel
 
-# WHY 상수로 노출하는가(Sprint 5 Task 4): 파일 상단 버전 헤더 주석("# version: v1.0")은
+# WHY 상수로 노출하는가(Sprint 5 Task 4): 파일 상단 버전 헤더 주석("# version: v1.1")은
 # import해서 report.json에 찍을 수 없다. traveler/core/prompt.py의 PROMPT_VERSION과
 # 동일한 SSOT 패턴 — eval/run_judge.py가 이 상수를 import해 judge_prompt_version으로 기록한다.
-JUDGE_PROMPT_VERSION = "v1.0"
+JUDGE_PROMPT_VERSION = "v1.1"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # JUDGE_SYSTEM_PROMPT — 5축 anchor rubric
@@ -46,6 +47,10 @@ JUDGE_SYSTEM_PROMPT = """\
 점수를 먼저 정하고 근거를 나중에 짜맞추면(post-hoc rationalization) 채점의
 일관성이 무너집니다. 근거가 점수를 결정해야지, 점수가 근거를 결정해서는
 안 됩니다.
+
+[시간·이동 정보 유의]
+좌표나 시간 예산이 미확인으로 표시된 경우 실제 이동·도로 시간을 추정하거나
+만들어내지 마십시오. 서버의 좌표 기반 예상치는 실제 도로·교통 시간과 다릅니다.
 
 [5축 채점 기준 — anchor rubric]
 
@@ -99,6 +104,30 @@ JUDGE_SYSTEM_PROMPT = """\
 """
 
 
+def _available_time_text(ctx: ContextData) -> str:
+    """Mirror the generator's PR47 duration contract for judge input."""
+    if ctx.duration_minutes is not None:
+        return f"{ctx.duration_minutes}분 ({ctx.duration_minutes / 60:g}시간)"
+    if ctx.duration_hours_min:
+        return f"{ctx.duration_hours_min}~{ctx.duration_hours}시간"
+    return f"{ctx.duration_hours}시간"
+
+
+def _schedule_origin_text(ctx: ContextData) -> str:
+    """Expose only a supplied actual origin; never relabel a search center as GPS."""
+    origin_lat = ctx.schedule_origin_lat
+    origin_lng = ctx.schedule_origin_lng
+    if _valid_coordinate(origin_lat, origin_lng):
+        return f"위도 {origin_lat}, 경도 {origin_lng}"
+    if origin_lat is None and origin_lng is None:
+        return "실제 GPS 미확인 — 레거시 계산은 검색 중심을 사용할 수 있음"
+    return "미확인 또는 유효하지 않음 — 총 이동시간 검증 불가"
+
+
+def _minutes_text(value: float | int | None) -> str:
+    return "미확인" if value is None else f"{value:g}분"
+
+
 def build_judge_user_message(
     ctx: ContextData, mode: str, course: StreamingCourseModel
 ) -> str:
@@ -119,8 +148,10 @@ def build_judge_user_message(
         "[사용자 요청 및 제약 조건]",
         f"여행 유형: {mode}",
         f"사용자 요청: {ctx.user_query}",
+        f"검색 중심 위치: 위도 {ctx.current_lat}, 경도 {ctx.current_lng}",
+        f"일정 출발지: {_schedule_origin_text(ctx)}",
         f"날씨: {ctx.weather}",
-        f"가용 시간: {ctx.duration_hours}시간",
+        f"가용 시간: {_available_time_text(ctx)}",
         f"이동 수단: {ctx.transport}",
     ]
 
@@ -137,10 +168,34 @@ def build_judge_user_message(
         parts.append("\n[추천 후보 장소 목록]")
         for spot in ctx.candidate_spots:
             indoor_str = "실내" if spot.indoor else "실외"
+            coordinate_text = (
+                f"좌표 {spot.lat}, {spot.lng}"
+                if _valid_coordinate(spot.lat, spot.lng)
+                else "좌표 미확인"
+            )
             parts.append(
                 f"  - place_id={spot.place_id} | {spot.place_name}"
-                f" | {spot.category} | 이동 {spot.distance_min:.0f}분 | {indoor_str}"
+                f" | {spot.category} | {coordinate_text} | {indoor_str}"
             )
+
+    if course.time_budget:
+        budget = course.time_budget
+        parts.extend(
+            [
+                "\n[서버 시간 예산 검증]",
+                f"시간 예산 검증: {budget.status}",
+                "예산 "
+                f"{_minutes_text(budget.budget_min)} | 예상 이동 "
+                f"{_minutes_text(budget.travel_min)} | 체류 "
+                f"{_minutes_text(budget.stay_min)} | 예상 합계 "
+                f"{_minutes_text(budget.total_min)}",
+                "좌표 기반 예상치이며 실제 도로·교통 시간은 아님",
+                "첫 이동 " + ("포함" if budget.includes_initial_travel else "미포함")
+                + ", 마지막 장소에서의 복귀 이동 "
+                + ("포함" if budget.includes_return_travel else "제외"),
+                f"서버 메모: {budget.note}",
+            ]
+        )
 
     parts.append("\n[채점 대상 — GPT가 생성한 코스]")
     parts.append(f"bot_message: {course.bot_message}")

@@ -13,8 +13,11 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from eval.judge import AxisScore, JudgeResult
-from eval.run_judge import main
+from eval.judge_prompt import JUDGE_PROMPT_VERSION
+from eval.run_judge import _check_regression, main
 from traveler.validation.schema import RecommendedPlaceModel, StreamingCourseModel
 
 
@@ -70,7 +73,10 @@ def _write_baseline(path: Path, mode: str, score: float) -> None:
     """
     axes = ("condition_fit", "mood_match", "route_sanity", "diversity", "completeness")
     path.write_text(
-        json.dumps({mode: {axis: score for axis in axes}}), encoding="utf-8"
+        json.dumps({
+            "_meta": {"judge_prompt_version": JUDGE_PROMPT_VERSION},
+            mode: {axis: score for axis in axes},
+        }), encoding="utf-8"
     )
 
 
@@ -166,6 +172,7 @@ def test_baseline_regression_detected(mock_generate, mock_judge, tmp_path):
     baseline.write_text(
         json.dumps(
             {
+                "_meta": {"judge_prompt_version": JUDGE_PROMPT_VERSION},
                 "타지": {
                     "condition_fit": 4.5,
                     "mood_match": 4.5,
@@ -313,6 +320,7 @@ def test_save_baseline_writes_axis_means(mock_generate, mock_judge, tmp_path):
     assert baseline.exists()
     saved = json.loads(baseline.read_text(encoding="utf-8"))
     assert saved["근교"]["condition_fit"] == 4.0
+    assert saved["_meta"]["judge_prompt_version"] == JUDGE_PROMPT_VERSION
 
 
 # ── Test (h): verdict FAIL이면 --save-baseline이 저장을 거부한다 ──────────────
@@ -392,3 +400,124 @@ def test_zero_judge_samples_in_mode_is_inconclusive(mock_generate, mock_judge, t
     report = json.loads(out.read_text(encoding="utf-8"))
     assert report["regression"]["verdict"] == "INCONCLUSIVE"
     assert any("judge 표본 0건" in n for n in report["regression"]["notes"])
+
+
+@pytest.mark.parametrize("metadata", [None, {}, {"judge_prompt_version": "v0.legacy"}, "invalid"])
+@pytest.mark.parametrize("current_score", [1, 5])
+@patch("eval.run_judge.judge_course")
+@patch("eval.run_judge.generate_course")
+def test_incompatible_judge_baseline_is_inconclusive(
+    mock_generate, mock_judge, tmp_path, metadata, current_score
+):
+    """평가 기준 변경을 생성 품질의 향상이나 회귀로 오판하지 않는다."""
+    dataset = tmp_path / "cases.jsonl"
+    _write_dataset(dataset, [_case_dict("case-1")])
+    out = tmp_path / "report.json"
+    baseline = tmp_path / "baseline.json"
+    _write_baseline(baseline, mode="타지", score=3.0)
+    saved = json.loads(baseline.read_text(encoding="utf-8"))
+    if metadata is None:
+        saved.pop("_meta")
+    else:
+        saved["_meta"] = metadata
+    baseline.write_text(json.dumps(saved), encoding="utf-8")
+    mock_generate.return_value = _passing_course()
+    mock_judge.return_value = _judge_result(current_score)
+
+    exit_code = main(
+        ["--dataset", str(dataset), "--out", str(out), "--baseline", str(baseline)]
+    )
+
+    assert exit_code == 2
+    regression = json.loads(out.read_text(encoding="utf-8"))["regression"]
+    assert regression["verdict"] == "INCONCLUSIVE"
+    assert regression["deltas"] == {}
+    assert regression["failures"] == []
+    assert any("judge_prompt_version" in note for note in regression["notes"])
+
+
+def test_same_version_baseline_missing_mode_is_not_a_false_pass(tmp_path):
+    """같은 judge 버전이어도 현재 모드가 baseline에 없으면 비교 불가다."""
+    baseline = tmp_path / "baseline.json"
+    _write_baseline(baseline, mode="근교", score=5.0)
+
+    deltas, failures, notes = _check_regression(
+        {"타지": {"axis_means": {"condition_fit": 5.0}, "case_count": 1}},
+        baseline,
+    )
+
+    assert deltas == {}
+    assert failures == []
+    assert notes
+    assert "baseline" in notes[0] and "타지" in notes[0]
+
+
+def test_same_version_baseline_all_null_means_is_not_a_false_pass(tmp_path):
+    """같은 judge 버전이어도 기준 점수가 하나도 없으면 판정 불가다."""
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(json.dumps({
+        "_meta": {"judge_prompt_version": JUDGE_PROMPT_VERSION},
+        "타지": {"condition_fit": None, "mood_match": None},
+    }), encoding="utf-8")
+
+    deltas, failures, notes = _check_regression(
+        {"타지": {"axis_means": {"condition_fit": 5.0, "mood_match": 5.0}, "case_count": 1}},
+        baseline,
+    )
+
+    assert deltas == {}
+    assert failures == []
+    assert notes
+    assert "baseline" in notes[0]
+
+
+def test_same_version_baseline_missing_axes_still_detects_comparable_failure(tmp_path):
+    """일부 축이 없어도 비교 가능한 축의 실제 하락은 FAIL로 남긴다."""
+    baseline = tmp_path / "baseline.json"
+    _write_baseline(baseline, mode="타지", score=5.0)
+    saved = json.loads(baseline.read_text(encoding="utf-8"))
+    saved["타지"].pop("mood_match")
+    baseline.write_text(json.dumps(saved), encoding="utf-8")
+
+    deltas, failures, notes = _check_regression(
+        {"타지": {"axis_means": {"condition_fit": 1.0, "mood_match": 5.0}, "case_count": 1}},
+        baseline,
+    )
+
+    assert deltas == {"타지": {"condition_fit": -4.0}}
+    assert len(failures) == 1
+    assert "condition_fit" in failures[0]
+    assert any("mood_match" in note and "baseline" in note for note in notes)
+
+
+@patch("eval.run_judge.judge_course")
+@patch("eval.run_judge.generate_course")
+def test_same_version_all_null_baseline_is_inconclusive_not_pass(
+    mock_generate, mock_judge, tmp_path
+):
+    """실행 경로에서도 all-null baseline은 조용한 PASS가 되지 않는다."""
+    dataset = tmp_path / "cases.jsonl"
+    _write_dataset(dataset, [_case_dict("case-1", mode="타지")])
+    out = tmp_path / "report.json"
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(
+        json.dumps({
+            "_meta": {"judge_prompt_version": JUDGE_PROMPT_VERSION},
+            "타지": {
+                "condition_fit": None, "mood_match": None, "route_sanity": None,
+                "diversity": None, "completeness": None,
+            },
+        }),
+        encoding="utf-8",
+    )
+    mock_generate.return_value = _passing_course()
+    mock_judge.return_value = _judge_result(5)
+
+    exit_code = main(
+        ["--dataset", str(dataset), "--out", str(out), "--baseline", str(baseline)]
+    )
+
+    assert exit_code == 2
+    regression = json.loads(out.read_text(encoding="utf-8"))["regression"]
+    assert regression["verdict"] == "INCONCLUSIVE"
+    assert regression["failures"] == []
