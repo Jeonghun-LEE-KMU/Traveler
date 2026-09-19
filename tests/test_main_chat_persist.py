@@ -167,13 +167,14 @@ def test_chat_endpoint_streams_chunks_in_order(monkeypatch):
     ]
     # #13: 텍스트 청크들이 이어 붙으면 원본 JSON이 아니라 bot_message
     # 필드의 "디코딩된 텍스트"만 복원돼야 한다 (JSON 문법 조각이 새어나가면 안 됨).
-    assert "".join(p["bot_message"] for p in payloads) == json.loads(_COURSE_JSON)["bot_message"]
+    assert "".join(p["bot_message"] for p in payloads[:-1]) == json.loads(_COURSE_JSON)["bot_message"]
     assert all("{" not in p["bot_message"] for p in payloads)
     # 마지막 청크만 recommended_places를 담는다 (프론트가 의존하는 계약 — 변경 금지)
-    assert payloads[-1]["bot_message"] == ""
+    assert "예상" in payloads[-1]["bot_message"]
+    assert payloads[-1]["time_budget"]["status"] == "unverified"
     assert payloads[-1]["recommended_places"] == [
-        {"place_id": "126508", "visit_sequence": 1, "place_name": "불국사", "duration_min": None, "lat": 0.0, "lng": 0.0},
-        {"place_id": "126509", "visit_sequence": 2, "place_name": "첨성대", "duration_min": None, "lat": 0.0, "lng": 0.0},
+        {"place_id": "126508", "visit_sequence": 1, "place_name": "불국사", "duration_min": 60, "lat": None, "lng": None},
+        {"place_id": "126509", "visit_sequence": 2, "place_name": "첨성대", "duration_min": 60, "lat": None, "lng": None},
     ]
     assert session_id in main._session_courses
 

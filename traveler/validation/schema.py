@@ -26,8 +26,8 @@ A 방식 스트리밍 채택:
   content_id 문자열을 단일 출처로 쓰기로 함.
 """
 
-from typing import Optional
-from pydantic import BaseModel, Field, field_validator
+from typing import Literal, Optional
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class RecommendedPlaceModel(BaseModel):
@@ -72,6 +72,21 @@ class RecommendedPlaceModel(BaseModel):
         return max(10, min(480, v))   # 범위 밖은 clamp (600→480, 5→10)
 
 
+class TimeBudgetSummary(BaseModel):
+    """서버가 계산한 예상 일정: 실제 도로 소요시간과 구분하는 응답 메타데이터."""
+
+    budget_min: float = Field(ge=0)
+    travel_min: float | None = Field(default=None, ge=0)
+    stay_min: int = Field(ge=0)
+    total_min: float | None = Field(default=None, ge=0)
+    status: Literal["within_budget", "unverified", "no_feasible"]
+    note: str
+    # WHY: 프론트가 실제 길찾기 결과로 오인하지 않도록 근거와 계산 범위를 함께 보낸다.
+    method: Literal["coordinate_estimate"] = "coordinate_estimate"
+    includes_initial_travel: bool = True
+    includes_return_travel: bool = False
+
+
 class StreamingCourseModel(BaseModel):
     """
     GPT-4o 스트리밍 응답의 최상위 스키마.
@@ -86,9 +101,19 @@ class StreamingCourseModel(BaseModel):
     """
     bot_message: str                           # ← 첫 번째: 텍스트 스트리밍용
     recommended_places: list[RecommendedPlaceModel] = Field(
-        min_length=1,
         max_length=10,
     )                                          # ← 두 번째: 지도 핀용
+    time_budget: TimeBudgetSummary | None = None  # 서버 후처리에서만 채우는 예상 시간
+
+    @model_validator(mode="after")
+    def require_places_or_infeasible_result(self):
+        # WHY: LLM의 빈 JSON은 계속 실패로 보되, 서버가 시간 부족을 확인한 경우에는
+        # 가짜 장소 한 곳을 만드는 대신 빈 결과와 이유를 명시해야 한다.
+        if not self.recommended_places and (
+            self.time_budget is None or self.time_budget.status != "no_feasible"
+        ):
+            raise ValueError("빈 코스에는 서버의 no_feasible 시간 검증 결과가 필요합니다.")
+        return self
 
     @field_validator("recommended_places")
     @classmethod

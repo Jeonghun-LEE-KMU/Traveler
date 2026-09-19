@@ -232,8 +232,7 @@ def test_sprint4_prompt_forbids_ungrounded_place_generation():
 
 def test_sprint4_prompt_requires_time_budget_check():
     """
-    [v2.1 — 2026-08-09] 이동시간 데이터(Tmap) 없이 GPT가 이동시간을 추정하던
-    지시를 제거했다(Issue #15). 이제 체류시간 합계만 가용 시간과 대조한다.
+    체류시간 점검은 유지하면서 v2.4부터 좌표 기반 예상 이동시간을 서버가 검증한다.
     """
     prompt = get_system_prompt("장거리")
 
@@ -351,3 +350,13 @@ def test_build_context_message_spot_limit_none_lists_all_candidates():
     msg = build_context_message(ctx)
 
     assert "장소20" in msg
+
+
+# ── v2.3: 카테고리별 체류시간 범위표 ────────────────────────────────────────
+
+def test_체류시간_범위표가_3종_모드에_모두_들어간다():
+    """_COMMON_BASE에 있어야 하는 블록 — 한 모드 페르소나로 옮기면 나머지 2종이 빈다."""
+    for system_prompt in (SYSTEM_PROMPT_TOURIST, SYSTEM_PROMPT_NEARBY, SYSTEM_PROMPT_LONGDRIVE):
+        assert "[장소별 체류시간(duration_min) 기준]" in system_prompt
+        for category in ("관광", "문화", "음식", "쇼핑", "축제"):
+            assert f"  - {category}:" in system_prompt

@@ -28,6 +28,15 @@ from traveler.validation.schema import RecommendedPlaceModel, StreamingCourseMod
 client = TestClient(main.app)
 
 
+@pytest.fixture(autouse=True)
+def stub_get_visited(monkeypatch):
+    """Keep revise endpoint tests offline; the visited-forwarding test overrides it."""
+    async def fake_get_visited(_session_id):
+        return set()
+
+    monkeypatch.setattr(main, "get_visited", fake_get_visited)
+
+
 def _dummy_ctx() -> ContextData:
     return ContextData(
         user_query="경주 여행",
@@ -111,12 +120,13 @@ def test_revise_post_appends_to_chat_history(monkeypatch):
 
     monkeypatch.setattr(main, "revise_course", fake_revise_course)
 
-    client.post("/api/chat/revise", json={"user_message": "불국사 빼줘", "session_id": session_id})
+    response = client.post("/api/chat/revise", json={"user_message": "불국사 빼줘", "session_id": session_id})
 
     history_messages = main.memory_store[session_id].messages
     assert len(history_messages) == 2
     assert history_messages[0].content == "불국사 빼줘"
-    assert history_messages[1].content == "불국사를 뺐어요."
+    assert history_messages[1].content == response.json()["bot_message"]
+    assert history_messages[1].content.startswith("불국사를 뺐어요.\n\n[예상 일정]")
 
 
 def test_revise_post_passes_latest_visited_to_revise_course(monkeypatch):

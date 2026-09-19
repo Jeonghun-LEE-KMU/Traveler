@@ -1,37 +1,74 @@
 """
-retriever.py 통합 테스트 — get_context()가 동승자를 query에서 채우는지.
+retriever.py 통합 테스트 — preference extraction 결과가 get_context()에 전달되는지.
 
 WHY 이 테스트가 필요한가:
-  parse_companion 단위 테스트(test_intent.py)와 별개로, get_context()가 더 이상
-  companion="친구"로 하드코딩하지 않고 parse_companion(user_query)의 반환값을
-  그대로 ContextData.companion에 채우는지 — 즉 두 모듈이 실제로 연결됐는지 —
-  를 보장하는 통합 지점이다(하드코딩 회귀를 막는다).
+  preference extraction 단위 동작과 별개로, 프론트 형식 메시지에서 추출한
+  prefs가 get_context()를 거쳐 ContextData.companion에 반영되는지 보장한다.
+  get_context() 자체는 query를 다시 파싱하지 않고 호출자가 전달한 prefs를
+  보존하는 경계이므로, 실제 호출 경로의 extraction과 경계 양쪽을 함께 검증한다.
 
-  get_context()는 동기(sync) def이고 더미라 실제 I/O가 없으므로, mock 없이
-  평이한 sync def로 .companion 필드 하나만 검증한다(테스트 1개 = 검증 1개).
+  get_context()는 (ContextData, spots_context) 튜플을 반환한다. 검색 경계는
+  mock으로 차단하고, query extraction 결과와 명시적 prefs 전달이 각각
+  ContextData.companion에 보존되는지 검증한다(테스트 1개 = 검증 1개).
 """
 
 from unittest.mock import patch
 
+from traveler.rag.preference import extract_prefs_from_message, extract_user_request
 from traveler.rag.retriever import DEFAULT_TOP_K, get_context
 
 
-def test_get_context_fills_companion_from_query():
-    """동승자 키워드가 있는 query → 해당 라벨이 companion에 채워지는지 확인."""
-    ctx = get_context(user_query="여자친구랑 부산 데이트")
-    assert ctx.companion == "연인"
+def test_get_context_uses_extracted_companion_from_request():
+    """실제 요청 본문에서 추출한 커플 선호가 컨텍스트에 반영된다."""
+    message = "요청: 여자친구랑 부산 데이트\n구성: 4시간 코스"
+    prefs = extract_prefs_from_message(message)
+
+    with patch("traveler.rag.retriever.search_places", return_value=[]) as mock_search:
+        ctx, _ = get_context(
+            user_query=extract_user_request(message),
+            prefs=prefs,
+        )
+    assert prefs["companion"] == "커플"
+    assert ctx.companion == "커플"
+    assert mock_search.called
 
 
-def test_get_context_solo_query_fills_honja():
-    """"혼자" 명시 query → companion이 "혼자"로 채워지는지 확인 (미언급과 구별)."""
-    ctx = get_context(user_query="혼자 훌쩍 떠나고 싶어요")
+def test_get_context_uses_extracted_solo_companion():
+    """실제 요청 본문에서 추출한 솔로 선호가 컨텍스트에 반영된다."""
+    message = "요청: 혼자 훌쩍 떠나고 싶어요"
+    prefs = extract_prefs_from_message(message)
+
+    with patch("traveler.rag.retriever.search_places", return_value=[]):
+        ctx, _ = get_context(
+            user_query=extract_user_request(message),
+            prefs=prefs,
+        )
+    assert prefs["companion"] == "혼자"
     assert ctx.companion == "혼자"
 
 
-def test_get_context_no_companion_fills_empty():
-    """동승자 미언급 query → companion이 빈 문자열 ""로 채워지는지 확인."""
-    ctx = get_context(user_query="맛집 추천해줘")
-    assert ctx.companion == ""
+def test_get_context_defaults_missing_companion_to_honja():
+    """동행자를 말하지 않으면 컨텍스트 기본값은 혼자다."""
+    message = "요청: 맛집 추천해줘"
+    prefs = extract_prefs_from_message(message)
+
+    with patch("traveler.rag.retriever.search_places", return_value=[]):
+        ctx, _ = get_context(
+            user_query=extract_user_request(message),
+            prefs=prefs,
+        )
+    assert "companion" not in prefs
+    assert ctx.companion == "혼자"
+
+
+def test_get_context_preserves_explicit_companion_preference():
+    """세션에서 이미 정규화된 명시적 선호는 query와 무관하게 보존된다."""
+    with patch("traveler.rag.retriever.search_places", return_value=[]):
+        ctx, _ = get_context(
+            user_query="맛집 추천해줘",
+            prefs={"companion": "친구"},
+        )
+    assert ctx.companion == "친구"
 
 
 # ── #31 PM 리뷰 8번: get_context()의 top_k 패스스루 ──────────────────────────

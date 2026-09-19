@@ -12,6 +12,7 @@ def test_streaming_course_field_order_is_stable():
     assert list(StreamingCourseModel.model_fields) == [
         "bot_message",
         "recommended_places",
+        "time_budget",
     ]
 
 

@@ -37,7 +37,7 @@ class SpotCandidate:
                           #  값이 바뀌는 문제가 있어 content_id 문자열로 통일 — Issue #15, 이수연 합의)
     place_name: str      # 장소명 (예: "불국사")
     category: str        # 카테고리 (예: "관광", "음식", "체험", "휴식")
-    distance_min: float  # 현재 GPS 기준 Tmap 이동 시간 (분)
+    distance_min: float  # 레거시 검색 거리 값(현 retriever는 km). 일정 시간 계산에는 쓰지 않음.
     indoor: bool         # 실내 여부 (날씨 제약 판단에 사용)
     lat: float = 0.0     # 장소 위도 (Pinecone 메타데이터 재사용 — #27)
     lng: float = 0.0     # 장소 경도 (Pinecone 메타데이터 재사용 — #27)
@@ -62,15 +62,28 @@ class ContextData:
     """
     # --- 필수 ---
     user_query: str                      # 사용자 자연어 요청 (예: "분위기 좋은 곳 추천")
-    current_lat: float                   # 현재 차량 위도
-    current_lng: float                   # 현재 차량 경도
+    current_lat: float                   # 검색 중심 위도 (지역명 감지 시 바뀔 수 있음)
+    current_lng: float                   # 검색 중심 경도
     weather: str                         # 기상청 API 날씨 (예: "맑음", "비", "흐림")
     candidate_spots: list[SpotCandidate] # SQLite + Pinecone 필터링 결과 (3~10개 권장)
 
     # --- 선택 ---
-    duration_hours: int = 3              # 가용 시간 (기본 3시간)
+    # 가용 시간. 사용자가 "5시간"처럼 말하면 preference.extract_duration_hours가
+    # 뽑아 이 값을 덮고, duration_hours_min은 None이 된다.
+    duration_hours: int | float = 5      # 레거시 호환 시간 표기 (분 예산이 있으면 소수 유지)
+    duration_minutes: int | None = None  # 명시된 가용 시간의 SSOT. None이면 기존 3~5시간 기본값.
+    # 사용자가 시간을 말하지 않았을 때만 채운다 → 프롬프트에 "가용 시간: 3~5시간"으로
+    # 나간다. 3시간 단일값이던 시절엔 GPT가 2~3곳에서 코스를 끊어 빈약했고(2026-09-16
+    # 실측), 5시간 단일값은 짧게 다녀오려는 사용자에게 과하다. 범위로 여지를 준다.
+    # ⚠️ 주의: eval/metrics.py는 duration_hours(상한)만 예산 계산에 쓴다.
+    duration_hours_min: int | None = 3   # 미지정일 때의 범위 하한 (지정되면 None)
     transport: str = "자차"             # 이동 수단
+    transport_assumed: bool = False      # 명시/저장된 수단이 없어 기본 자차를 가정했는지 여부
     companion: str = "혼자"             # 동행자
     mood: str = ""                       # 분위기 힌트 (Pinecone 쿼리에서 추출)
     route_summary: str = ""             # Tmap 경로 요약 (선택)
     region: str | None = None            # extract_region()이 감지한 지역명 (2026-09-15, 경주 특화)
+    # WHY: 지역 검색 중심점과 실제 출발지를 섞으면 첫 이동시간이 사라진다.
+    # None은 기존 직접 호출의 current_lat/lng 사용, 0은 API에서 GPS 미제공을 뜻한다.
+    schedule_origin_lat: float | None = None
+    schedule_origin_lng: float | None = None
