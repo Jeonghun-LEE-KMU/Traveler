@@ -300,6 +300,8 @@ def detect_region(text: str) -> str | None:
 def detect_content_types(text: str) -> set[str]:
     if any(word in text for word in ("음식", "식당", "맛집", "카페", "먹")):
         return {"39"}
+    if any(word in text for word in ("쇼핑", "기념품", "특산품", "선물", "아울렛", "시장")):
+        return {"38", "12"}  # 쇼핑 + 관광(전통시장 등 포함)
     if any(word in text for word in ("축제", "행사", "페스티벌")):
         return {"15"}
     if any(word in text for word in ("박물관", "미술관", "도서관", "문화시설")):
