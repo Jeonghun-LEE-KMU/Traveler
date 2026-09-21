@@ -196,11 +196,12 @@ async def test_generate_course_valid_json_parses_successfully(mock_get_client):
     chunks = [_chunk(valid_json[:20]), _chunk(valid_json[20:])]
     _mock_client_with_chunks(mock_get_client, chunks)
 
-    ctx = minimal_ctx()
+    ctx = minimal_ctx(candidate_spots=[sample_spot()])
     course = await generate_course(ctx)
 
-    assert course.bot_message == "경주 코스를 추천해요"
+    assert course.bot_message.startswith("경주 코스를 추천해요\n\n[예상 일정]")
     assert course.recommended_places[0].place_id == "1"
+    assert course.time_budget.status == "unverified"  # 샘플에 좌표가 없다.
 
 
 # ── Test 7: 깨진 JSON → ValidationError → fallback 반환 ──────────────────────
@@ -218,11 +219,12 @@ async def test_generate_course_malformed_json_returns_fallback(mock_get_client):
     chunks = [_chunk(broken_json)]
     _mock_client_with_chunks(mock_get_client, chunks)
 
-    ctx = minimal_ctx()   # candidate_spots=[] → fallback place_id는 1
+    ctx = minimal_ctx()   # 후보가 없으면 가짜 장소 없이 명시적인 빈 응답
     course = await generate_course(ctx)
 
     assert "문제가 있었" in course.bot_message
-    assert course.recommended_places[0].place_id == "1"
+    assert course.recommended_places == []
+    assert course.time_budget.status == "no_feasible"
 
 
 # ── Test 7b: fallback이 int place_id도 안전하게 str로 감싸는지 ───────────────
@@ -296,11 +298,12 @@ async def test_generate_course_api_error_returns_fallback(mock_get_client):
     )
     mock_get_client.return_value = mock_client
 
-    ctx = minimal_ctx()   # candidate_spots=[] → fallback place_id는 1
+    ctx = minimal_ctx()   # 후보가 없으면 가짜 장소 없이 명시적인 빈 응답
     course = await generate_course(ctx)
 
     assert "문제가 있었" in course.bot_message
-    assert course.recommended_places[0].place_id == "1"
+    assert course.recommended_places == []
+    assert course.time_budget.status == "no_feasible"
 
 
 # ── Test 10: companion이 있으면 "동행자:" 줄이 메시지에 포함 ─────────────────
@@ -346,12 +349,12 @@ def test_parse_course_valid_json_returns_model_and_false():
         '{"bot_message": "경주 코스를 추천해요", '
         '"recommended_places": [{"place_id": "1", "visit_sequence": 1}]}'
     )
-    ctx = minimal_ctx()
+    ctx = minimal_ctx(candidate_spots=[sample_spot()])
 
     course, is_fallback = parse_course(valid_json, ctx)
 
     assert is_fallback is False
-    assert course.bot_message == "경주 코스를 추천해요"
+    assert course.bot_message.startswith("경주 코스를 추천해요\n\n[예상 일정]")
     assert course.recommended_places[0].place_id == "1"
 
 
@@ -382,12 +385,12 @@ def test_parse_course_fallback_limit_slices_candidate_spots():
     assert all(p.place_name == "불국사" for p in course.recommended_places)
 
 
-def test_parse_course_no_candidates_yields_placeholder_place_id_1():
-    """candidate_spots가 없으면 자리표시자 place_id="1" 하나만 반환하는지 확인."""
+def test_parse_course_no_candidates_yields_explicit_empty_result():
+    """후보가 없으면 가짜 place_id 대신 이유가 있는 빈 결과를 반환한다."""
     ctx = minimal_ctx(candidate_spots=[])
 
     course, is_fallback = parse_course("{broken", ctx)
 
     assert is_fallback is True
-    assert len(course.recommended_places) == 1
-    assert course.recommended_places[0].place_id == "1"
+    assert course.recommended_places == []
+    assert course.time_budget.status == "no_feasible"

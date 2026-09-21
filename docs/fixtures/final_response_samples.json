@@ -1,0 +1,147 @@
+{
+  "source": "local fixture through real schedule + serializer; not live LLM output",
+  "origin": {
+    "lat": 35.856,
+    "lon": 129.224
+  },
+  "responses": {
+    "normal": {
+      "query": "경주 4시간 코스",
+      "gps_provided": true,
+      "event": "message",
+      "data": {
+        "bot_message": "[로컬 QA 합성 응답] 실제 장소 추천이 아닙니다.\n\n[예상 일정] 예상 총 121분(이동 1분 + 체류 120분) / 가용 240분 — 출발지→첫 장소와 장소 간 이동 포함, 복귀 이동 제외. 좌표 직선거리·자차 평균30km/h 추정(도로/교통/주차 미반영). 이동수단 미지정으로 자차를 가정했습니다",
+        "recommended_places": [
+          {
+            "place_id": "fixture-1",
+            "visit_sequence": 1,
+            "place_name": "[테스트] 장소 1",
+            "duration_min": 30,
+            "lat": 35.857,
+            "lng": 129.224
+          },
+          {
+            "place_id": "fixture-2",
+            "visit_sequence": 2,
+            "place_name": "[테스트] 장소 2",
+            "duration_min": 30,
+            "lat": 35.858000000000004,
+            "lng": 129.224
+          },
+          {
+            "place_id": "fixture-3",
+            "visit_sequence": 3,
+            "place_name": "[테스트] 장소 3",
+            "duration_min": 30,
+            "lat": 35.859,
+            "lng": 129.224
+          },
+          {
+            "place_id": "fixture-4",
+            "visit_sequence": 4,
+            "place_name": "[테스트] 장소 4",
+            "duration_min": 30,
+            "lat": 35.86,
+            "lng": 129.224
+          }
+        ],
+        "time_budget": {
+          "budget_min": 240.0,
+          "travel_min": 0.8,
+          "stay_min": 120,
+          "total_min": 120.8,
+          "status": "within_budget",
+          "note": "예상 총 121분(이동 1분 + 체류 120분) / 가용 240분 — 출발지→첫 장소와 장소 간 이동 포함, 복귀 이동 제외. 좌표 직선거리·자차 평균30km/h 추정(도로/교통/주차 미반영). 이동수단 미지정으로 자차를 가정했습니다",
+          "method": "coordinate_estimate",
+          "includes_initial_travel": true,
+          "includes_return_travel": false
+        }
+      }
+    },
+    "no_feasible": {
+      "query": "테스트: 추천불가 1시간 코스",
+      "gps_provided": true,
+      "event": "message",
+      "data": {
+        "bot_message": "가용시간 안에 추천할 수 있는 장소를 찾지 못했습니다.\n\n[예상 일정] 현재 후보 순서와 좌표 추정 기준에서 예산 안에 들어오는 실제 후보를 찾지 못했습니다.",
+        "recommended_places": [],
+        "time_budget": {
+          "budget_min": 60.0,
+          "travel_min": null,
+          "stay_min": 0,
+          "total_min": null,
+          "status": "no_feasible",
+          "note": "현재 후보 순서와 좌표 추정 기준에서 예산 안에 들어오는 실제 후보를 찾지 못했습니다.",
+          "method": "coordinate_estimate",
+          "includes_initial_travel": true,
+          "includes_return_travel": false
+        }
+      }
+    },
+    "unverified": {
+      "query": "경주 4시간 코스",
+      "gps_provided": false,
+      "event": "message",
+      "data": {
+        "bot_message": "[로컬 QA 합성 응답] 실제 장소 추천이 아닙니다.\n\n[예상 일정] 예상 이동시간을 검증할 수 없어 예산 충족 여부를 확인하지 않았습니다: 출발지 또는 선택 장소의 좌표가 없거나 유효하지 않음. 출발지→첫 장소와 장소 간 이동이 대상이며, 복귀 이동은 제외됩니다.",
+        "recommended_places": [
+          {
+            "place_id": "fixture-1",
+            "visit_sequence": 1,
+            "place_name": "[테스트] 장소 1",
+            "duration_min": 30,
+            "lat": 35.857,
+            "lng": 129.224
+          },
+          {
+            "place_id": "fixture-2",
+            "visit_sequence": 2,
+            "place_name": "[테스트] 장소 2",
+            "duration_min": 30,
+            "lat": 35.858000000000004,
+            "lng": 129.224
+          },
+          {
+            "place_id": "fixture-3",
+            "visit_sequence": 3,
+            "place_name": "[테스트] 장소 3",
+            "duration_min": 30,
+            "lat": 35.859,
+            "lng": 129.224
+          },
+          {
+            "place_id": "fixture-4",
+            "visit_sequence": 4,
+            "place_name": "[테스트] 장소 4",
+            "duration_min": 30,
+            "lat": 35.86,
+            "lng": 129.224
+          }
+        ],
+        "time_budget": {
+          "budget_min": 240.0,
+          "travel_min": null,
+          "stay_min": 120,
+          "total_min": null,
+          "status": "unverified",
+          "note": "예상 이동시간을 검증할 수 없어 예산 충족 여부를 확인하지 않았습니다: 출발지 또는 선택 장소의 좌표가 없거나 유효하지 않음. 출발지→첫 장소와 장소 간 이동이 대상이며, 복귀 이동은 제외됩니다.",
+          "method": "coordinate_estimate",
+          "includes_initial_travel": true,
+          "includes_return_travel": false
+        }
+      }
+    },
+    "application_error": {
+      "query": "0분 코스",
+      "gps_provided": true,
+      "event": "application_error",
+      "data": {
+        "error": {
+          "code": "INVALID_REQUEST",
+          "message": "가용 시간은 1분 이상 12시간 이하의 정수 분으로 입력해 주세요.",
+          "retryable": false
+        }
+      }
+    }
+  }
+}

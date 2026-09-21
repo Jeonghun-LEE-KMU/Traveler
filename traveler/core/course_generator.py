@@ -13,9 +13,10 @@ import time
 from pydantic import ValidationError
 
 from traveler.core.llm_client import MODEL, get_client
+from traveler.core.course_schedule import apply_schedule
 from traveler.core.prompt import build_context_message, get_system_prompt, normalize_travel_mode
 from traveler.rag.types import ContextData
-from traveler.validation.schema import RecommendedPlaceModel, StreamingCourseModel
+from traveler.validation.schema import RecommendedPlaceModel, StreamingCourseModel, TimeBudgetSummary
 
 # WHY __name__: 로그 출처가 "traveler.core.course_generator"로 표시되어 디버깅이 쉬워진다
 logger = logging.getLogger(__name__)
@@ -57,6 +58,32 @@ def _build_fallback(ctx: ContextData, limit: int = 1) -> StreamingCourseModel:
     )
 
 
+def validate_course_schedule(
+    course: StreamingCourseModel, ctx: ContextData, *, fill_minimum: bool = True
+) -> StreamingCourseModel:
+    """생성·평가·수정에 같은 예상 이동+체류시간 정책을 적용한다 (추가 LLM 호출 없음)."""
+    # WHY: JSON 스키마에는 현재 위치·가용시간이 없으므로 문맥 기반 검증은 이 경계에서 한다.
+    result = apply_schedule(course, ctx, fill_minimum=fill_minimum)
+    timing = TimeBudgetSummary(
+        budget_min=result.budget_min, travel_min=result.travel_min,
+        stay_min=result.stay_min, total_min=result.total_min,
+        status=result.status, note=result.note,
+    )
+    message = course.bot_message
+    if message != FALLBACK_BOT_MESSAGE:
+        # 재검증 때 이전 요약이 중복으로 붙지 않게 분리한다. 장소가 달라졌다면
+        # 이전 LLM 설명을 사실처럼 유지하지 않고 최종 결과를 명확히 안내한다.
+        message = message.split("\n\n[예상 일정]", 1)[0]
+        if [p.place_id for p in result.places] != [p.place_id for p in course.recommended_places]:
+            names = [p.place_name or p.place_id for p in result.places]
+            message = ("가용시간을 고려한 최종 코스: " + " → ".join(names)
+                       if names else "가용시간 안에 추천할 수 있는 장소를 찾지 못했습니다.")
+        message += "\n\n[예상 일정] " + result.note
+    return StreamingCourseModel(
+        bot_message=message, recommended_places=result.places, time_budget=timing,
+    )
+
+
 def parse_course(
     full_text: str, ctx: ContextData, *, fallback_limit: int = 1
 ) -> tuple[StreamingCourseModel, bool]:
@@ -69,14 +96,17 @@ def parse_course(
     # 서로 어긋날 수 있다. 이 함수 하나로 합쳐 둘 다 같은 경로를 타게 한다.
     """
     try:
-        return StreamingCourseModel.model_validate_json(full_text), False
+        course = StreamingCourseModel.model_validate_json(full_text)
+        is_fallback = False
     except ValidationError as e:
         logger.warning(
             "[FALLBACK] 코스 검증 실패, fallback 사용: %s | full_text[:200]=%s",
             e,
             full_text[:200],
         )
-        return _build_fallback(ctx, fallback_limit), True
+        course = _build_fallback(ctx, fallback_limit)
+        is_fallback = True
+    return validate_course_schedule(course, ctx), is_fallback
 
 
 async def generate_course(
@@ -146,7 +176,7 @@ async def generate_course(
     except Exception as e:
         # ⚠️ 주의: 데모 중단 방지 — API 호출/스트리밍 오류는 로그로만 남기고 안전 응답으로 계속
         logger.warning("[FALLBACK] API 호출 실패, fallback 사용: %s", e)
-        return _build_fallback(ctx)
+        return validate_course_schedule(_build_fallback(ctx), ctx)
 
     latency = time.time() - t_start
 

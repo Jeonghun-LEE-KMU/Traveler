@@ -5,10 +5,11 @@ TRAVELER FastAPI 서버 - Sprint 3
 import asyncio
 import json
 import logging
-from typing import Literal
 import os
+from dataclasses import replace
+from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query, Body
+from fastapi import FastAPI, HTTPException, Query, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -29,7 +30,8 @@ from config import (
 )
 from traveler.api.weather import get_weather
 from traveler.api.proxy import router as proxy_router
-from traveler.core.course_generator import parse_course
+from traveler.core.course_generator import parse_course, validate_course_schedule
+from traveler.core.course_response import application_error_event, course_payload
 from traveler.core.edit_intent import revise_course
 from traveler.core.prompt import get_system_prompt, build_context_message
 from traveler.core.stream_text import BotMessageExtractor
@@ -43,8 +45,9 @@ from traveler.rag.session import (
 )
 from traveler.rag.preference import (
     extract_prefs_from_message,
+    extract_user_request,
+    extract_duration_minutes,
     build_visited_context,
-    extract_duration,
 )
 from traveler.rag.types import ContextData
 from traveler.validation.schema import StreamingCourseModel
@@ -149,6 +152,9 @@ async def _stream_and_persist(
             model="gpt-4o",
             api_key=OPENAI_API_KEY,
             streaming=True,
+            # ⚠️ 주의: 지정하지 않으면 LangChain 기본값 0.7이라, 같은 질의에도 코스 장소
+            # 수가 흔들렸다. eval 경로(course_generator.generate_course)가 쓰는 0.3에 맞춘다.
+            temperature=0.3,
             model_kwargs={"response_format": {"type": "json_object"}},
         )
 
@@ -203,7 +209,6 @@ async def _stream_and_persist(
         # 갈리지 않게 한다(#25). fallback_limit=CANDIDATE_PROMPT_LIMIT은 예전
         # prompt_spots(=candidate_spots[:CANDIDATE_PROMPT_LIMIT]) 슬라이싱과 동등하다.
         course, is_fallback = parse_course(full_text, context_data, fallback_limit=CANDIDATE_PROMPT_LIMIT)
-        spot_map = {s.place_id: s for s in context_data.candidate_spots}
         # WHY place_name/duration_min도 담는가: 프론트(useRecommendationStream.ts)가
         # 예전엔 이어붙인 원시 스트림을 JSON으로 재파싱해 place_name/duration_min을
         # 복원했다. #13으로 스트림이 순수 텍스트가 된 뒤로는 이 마지막 청크가 그
@@ -212,60 +217,62 @@ async def _stream_and_persist(
         # 프론트 mappers.ts:50이 null만 검사해 0.0을 "유효 좌표"로 오인하고, 마커가
         # 기니만 앞바다(0,0)에 찍히며 지도 bounds가 그쪽까지 벌어진다(develop #42와
         # 동일 원인).
-        recommended = [
-            {
-                "place_id": p.place_id,
-                "visit_sequence": p.visit_sequence,
-                "place_name": p.place_name,
-                "duration_min": p.duration_min,
-                "lat": spot_map[p.place_id].lat if p.place_id in spot_map else None,
-                "lng": spot_map[p.place_id].lng if p.place_id in spot_map else None,
-            }
-            for p in course.recommended_places
-        ]
-        if is_fallback and not context_data.candidate_spots:
-            # D11: candidate_spots가 아예 없으면 fallback은 자리표시자(place_id="1")
-            # 하나뿐이라 세션에 저장해봐야 /api/chat/revise가 수정할 대상이 못 된다
-            # — 예전처럼 응답도 비우고 저장을 건너뛴다.
-            recommended = []
-            logger.warning("[Chat] 폴백 코스를 세션에 저장하지 못함 — /api/chat/revise 불가")
+        recommended = course_payload(course, context_data)['recommended_places']
+        if not recommended:
+            # 시간에 맞는 장소가 없을 때 과거 코스를 그대로 수정하지 않도록 지운다.
+            _session_courses.pop(session_id, None)
+            logger.warning("[Chat] 추천 가능한 코스 없음 — /api/chat/revise 저장 생략")
         else:
             if not is_fallback:
                 logger.info("[Chat] 검증 성공: %d개 장소", len(recommended))
             # D11: 후속 /api/chat/revise가 "지금 코스"를 찾을 수 있도록 저장.
             _session_courses[session_id] = (course, context_data, mode_kr)
-            # ── visited 자동 저장 (#37) ──────────────────────────────────────────
-            # 이번 turn에 추천한 장소를 바로 세션에 누적.
-            # 프론트가 POST /api/session/{id}/visited를 호출하지 않아도 다음 turn에서
-            # get_visited()가 이 장소들을 "이미 방문"으로 간주해 제외한다.
-            # fallback(place_id="1" 단독)이나 빈 코스는 저장하지 않는다.
-            if recommended:
-                await add_visited(session_id, [p["place_id"] for p in recommended])
+            # develop #37: 시간 검증 후 확정된 장소만 다음 추천의 제외 목록에 누적한다.
+            await add_visited(session_id, [p["place_id"] for p in recommended])
 
         # ⚠️ 주의(PR #41 리뷰): bot_message 키가 스트림 끝까지 안 나온 경우(예: LLM이
         # recommended_places를 먼저 출력)에만 안전망을 태운다. streamed_any_text가
         # True인 정상 경로에서 여기도 course.bot_message를 실으면, 프론트가
         # `streamedJson += payload.bot_message`로 무조건 누적하기 때문에(마지막
         # 청크를 구분하지 않음) 이미 보여준 텍스트 뒤에 전체 문장이 다시 붙어
-        # 말풍선이 중복 렌더된다. 그래서 정상 경로는 기존과 동일하게 빈 문자열을 보낸다.
-        queue.put_nowait("data: {}\n\n".format(json.dumps({
-            "bot_message": "" if streamed_any_text else course.bot_message,
-            "recommended_places": recommended,
-        }, ensure_ascii=False)))
+        # 말풍선이 중복 렌더된다. 원문 전체는 다시 보내지 않고 최종 검증 안내만 붙인다.
+        # WHY: 이미 흘려보낸 LLM 문장은 프론트에서 되돌릴 수 없다. 최종 청크에
+        # 서버가 확정한 장소 목록과 예상 시간을 덧붙여, 조정 전 설명과 구분한다.
+        schedule_notice = ""
+        if course.time_budget:
+            final_names = " → ".join(p.place_name or p.place_id for p in course.recommended_places)
+            schedule_notice = (
+                "\n\n[예상 일정] 앞선 설명은 검증 전 제안입니다. 아래 최종 코스를 확인해주세요.\n"
+                + course.time_budget.note
+                + ("\n최종 코스: " + final_names if final_names else "\n추천 가능한 코스가 없습니다.")
+            )
+        final_message = (schedule_notice if streamed_any_text else
+                         course.bot_message + (schedule_notice if is_fallback else ""))
+        queue.put_nowait("data: {}\n\n".format(json.dumps(
+            course_payload(course, context_data, bot_message=final_message), ensure_ascii=False,
+        )))
 
     except Exception as e:
-        # ⚠️ 주의: 백그라운드 Task라 예외가 밖으로 전파되지 않는다 — 여기서 안 남기면
-        # 조용히 사라진다. 소비자는 아래 finally의 종료 신호로 정상 종료된다(스트림이
-        # 최종 청크 없이 끝나므로 프론트는 코스를 못 받는다 — 예외 전 동작과 동일하게
-        # "실패는 실패로" 두고, 있지도 않은 코스를 지어내지 않는다).
         logger.exception("[Chat] 스트리밍/저장 실패: %s", e)
+        queue.put_nowait(application_error_event(
+            'GENERATION_FAILED', '코스를 완성하지 못했어요. 잠시 후 다시 요청해 주세요.', retryable=True,
+        ))
     finally:
         # ★ 핵심: 어떤 경로로 끝나든 종료 신호를 넣어야 소비자가 영원히 대기하지 않는다.
         queue.put_nowait(None)
 
 
+def _error_stream(code: str, message: str, *, retryable: bool) -> StreamingResponse:
+    # WHY: EventSource는 HTTP422 본문을 읽지 못한다. 자연어 입력 오류도 SSE로 전달한다.
+    return StreamingResponse(
+        iter([application_error_event(code, message, retryable=retryable)]),
+        media_type='text/event-stream', headers={'Cache-Control': 'no-cache'},
+    )
+
+
 @app.get("/api/chat")
 async def chat_endpoint(
+        request: Request,
         user_message: str,
         lat: float = Query(35.8347, description="차량 현재 위도"),
         lon: float = Query(129.2189, description="차량 현재 경도"),
@@ -278,14 +285,23 @@ async def chat_endpoint(
     응답 형식:
         data: {"bot_message": "디코딩된 멘트 텍스트 조각...", "recommended_places": []}
         ...
-        data: {"bot_message": "", "recommended_places": [{"place_id": "1", "visit_sequence": 1,
-               "place_name": "...", "duration_min": 60, "lat": 35.79, "lng": 129.33}, ...]}
+        data: {"bot_message": "최종 예상 일정 안내", "recommended_places": [...],
+               "time_budget": {"status": "within_budget", "total_min": 210, ...}}
+        time_budget이 있는 마지막 청크의 빈 recommended_places도 최종 결과다.
     """
+    try:
+        request_minutes = extract_duration_minutes(extract_user_request(user_message))
+    except ValueError as exc:
+        return _error_stream('INVALID_REQUEST', str(exc), retryable=False)
     try:
         # "요청:" 이후 텍스트만 LLM user_query로 사용 (UI 선택값 "동행자: 친구" 등이 LLM을 혼란시키지 않도록)
         # WHY: 아래 region-carry 분기의 "다른/새로운/말고" 판단에도 필요해 extract_prefs보다
         # 앞으로 옮겼다 — user_message에만 의존하는 순수 계산이라 순서를 옮겨도 안전하다.
-        llm_query = user_message.split("요청:", 1)[-1].strip() if "요청:" in user_message else user_message
+        llm_query = extract_user_request(user_message)
+        # WHY: 경주 등 지역명이 검색 좌표를 바꾸기 전에 실제 GPS를 보존한다.
+        # 기본 검색 좌표는 사용자의 출발지라고 보장할 수 없으므로 미제공은 별도 표시한다.
+        has_origin = "lat" in request.query_params and "lon" in request.query_params
+        origin_lat, origin_lng = (lat, lon) if has_origin else (0.0, 0.0)
 
         from traveler.core.region import detect_region_coords
         region_name, _rlat, _rlon = detect_region_coords(user_message)
@@ -320,8 +336,6 @@ async def chat_endpoint(
             await update_prefs(session_id, new_prefs)
             prefs = {**prefs, **new_prefs}
 
-        duration_hours = extract_duration(llm_query) or 5
-        logger.info("[Chat] companion=%s | duration=%dh | llm_query=%s", prefs.get("companion"), duration_hours, llm_query[:80])
         visited_context = build_visited_context(visited)
 
         mode_kr = MODE_TO_KR.get(mode, "타지")
@@ -336,9 +350,14 @@ async def chat_endpoint(
             prefs,
             radius_km,
             top_k=CANDIDATE_POOL_SIZE,
-            duration_hours=duration_hours,
             fallback_region=fallback_region,
         )
+        context_data.schedule_origin_lat = origin_lat
+        context_data.schedule_origin_lng = origin_lng
+        if request_minutes is not None:
+            context_data.duration_minutes = request_minutes
+            context_data.duration_hours = request_minutes / 60
+            context_data.duration_hours_min = None
         # #31 PM 리뷰 8번: candidate_spots는 20개(넓은 풀) — revise용으로 context_data에
         # 그대로 저장한다. 폴백 응답에 노출하는 건 상위 10개로 제한(fallback_limit=
         # CANDIDATE_PROMPT_LIMIT, _stream_and_persist 참고) — 20개를 그대로 "추천"으로
@@ -375,7 +394,7 @@ async def chat_endpoint(
 
     except Exception as e:
         logger.exception("[Chat] 요청 처리 실패: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        return _error_stream('GENERATION_FAILED', '추천을 준비하지 못했어요. 잠시 후 다시 요청해 주세요.', retryable=True)
 
 
 @app.post("/api/session/{session_id}/visited")
@@ -438,7 +457,8 @@ async def revise_chat_endpoint(req: ReviseRequest):
     응답 형식(스트리밍 아님 — revise_course()는 단발 호출):
         {"bot_message": "...",
          "recommended_places": [{"place_id": "1", "visit_sequence": 1, "place_name": "...",
-                                  "duration_min": null, "lat": 35.79, "lng": 129.33}, ...]}
+                                  "duration_min": 60, "lat": 35.79, "lng": 129.33}, ...],
+         "time_budget": {"status": "within_budget", "total_min": 210, ...}}
 
     ⚠️ D11: "지금 코스"는 메모리 딕셔너리(_session_courses)에만 있다 — 이 session_id로
     /api/chat을 먼저 호출한 적이 없거나 서버가 재시작됐으면 404.
@@ -450,6 +470,22 @@ async def revise_chat_endpoint(req: ReviseRequest):
             detail="수정할 코스를 찾을 수 없습니다. 먼저 /api/chat으로 코스를 생성하세요.",
         )
     course, context_data, mode_kr = stored
+    # WHY: "이제 1시간만 가능해"는 이전 가용시간을 덮어야 한다. 저장 객체는
+    # 수정 성공 전까지 유지하고 새 문맥을 만들어 생성·검증 모두에 전달한다.
+    current_query = extract_user_request(req.user_message)
+    try:
+        new_minutes = extract_duration_minutes(current_query)
+        new_prefs = extract_prefs_from_message(current_query)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    context_data = replace(
+        context_data, user_query=current_query,
+        duration_minutes=new_minutes if new_minutes is not None else context_data.duration_minutes,
+        duration_hours=new_minutes / 60 if new_minutes is not None else context_data.duration_hours,
+        duration_hours_min=None if new_minutes is not None else context_data.duration_hours_min,
+        transport=new_prefs.get("transport", context_data.transport),
+        transport_assumed=new_prefs.get('transport_assumed', context_data.transport_assumed),
+    )
 
     # #31 PM 리뷰 11번: ctx.candidate_spots는 /api/chat 최초 호출 시점에 고정된다.
     # 그 뒤 POST /api/session/{id}/visited로 방문 처리된 장소가 있으면 최신 visited를
@@ -458,7 +494,13 @@ async def revise_chat_endpoint(req: ReviseRequest):
     revised = await revise_course(
         req.user_message, course, context_data, travel_mode=mode_kr, visited=visited,
     )
-    _session_courses[req.session_id] = (revised, context_data, mode_kr)
+    # WHY: 장소 추가·교체·순서 변경으로 이동 합계가 바뀐다. 수정에도 같은 시간
+    # 검증을 하되, "빼줘"로 줄인 코스를 최소 3곳 규칙으로 다시 채우면 안 된다.
+    revised = validate_course_schedule(revised, context_data, fill_minimum=False)
+    if revised.recommended_places:
+        _session_courses[req.session_id] = (revised, context_data, mode_kr)
+    else:
+        _session_courses.pop(req.session_id, None)
 
     # #31 PM 리뷰 9번: /api/chat은 RunnableWithMessageHistory가 자동으로
     # memory_store에 발화를 쌓지만, 이 엔드포인트는 그 체인을 안 거쳐서 아무것도
@@ -469,25 +511,7 @@ async def revise_chat_endpoint(req: ReviseRequest):
     history.add_user_message(req.user_message)
     history.add_ai_message(revised.bot_message)
 
-    # #27 나머지: lat/lng이 없어 프론트가 지금까지 "이전 코스" 좌표를 빌려 썼다.
-    # /api/chat과 동일하게 candidate_spots에서 조회해 실어 보낸다(없으면 0.0).
-    spot_map = {s.place_id: s for s in context_data.candidate_spots}
-    return {
-        "bot_message": revised.bot_message,
-        "recommended_places": [
-            # #31 PM 리뷰 6번: place_name은 이미 RecommendedPlaceModel에 있으니
-            # 여기서 빼면 프론트가 place_id로 이름을 다시 조회해야 한다.
-            {
-                "place_id": p.place_id,
-                "visit_sequence": p.visit_sequence,
-                "place_name": p.place_name,
-                "duration_min": p.duration_min,
-                "lat": spot_map[p.place_id].lat if p.place_id in spot_map else None,
-                "lng": spot_map[p.place_id].lng if p.place_id in spot_map else None,
-            }
-            for p in revised.recommended_places
-        ],
-    }
+    return course_payload(revised, context_data)
 
 
 @app.get("/health")

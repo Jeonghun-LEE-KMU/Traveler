@@ -570,7 +570,7 @@ def get_context(
     top_k: int = DEFAULT_TOP_K,
     dest_lat: float | None = None,
     dest_lon: float | None = None,
-    duration_hours: int = 5,
+    duration_hours: int | float | None = None,
     *,
     today: date | None = None,
     fallback_region: str | None = None,
@@ -581,6 +581,12 @@ def get_context(
         visited = set()
     if prefs is None:
         prefs = {}
+
+    # develop의 시간 인자를 호환하되, PR #47의 분 단위/누적 선호도가 우선이다.
+    if duration_hours is not None and not any(
+        prefs.get(key) is not None for key in ("duration_minutes", "duration_hours")
+    ):
+        prefs = {**prefs, "duration_hours": duration_hours}
 
     # WHY: region을 여기서 한 번만 계산해 search_places()에 그대로 넘긴다(fallback_region
     # 자리에). search_places()가 내부에서 다시 extract_region(user_query) or ... 를
@@ -601,6 +607,26 @@ def get_context(
         fallback_region=region,
     )
 
+    duration_minutes = prefs.get("duration_minutes")
+    # 분 예산이 새 계약의 SSOT다. 누적된 레거시 duration_hours가 남아 있어도
+    # 둘이 불일치하면 분 예산에서 다시 계산해 프롬프트·일정이 같은 제약을 본다.
+    duration_hours = duration_minutes / 60 if duration_minutes is not None else None
+    if isinstance(duration_hours, float) and duration_hours.is_integer():
+        duration_hours = int(duration_hours)
+    duration_fields: dict[str, int | float | None] = {}
+    if duration_minutes is not None:
+        duration_fields = {
+            "duration_minutes": duration_minutes,
+            "duration_hours": duration_hours,
+            "duration_hours_min": None,
+        }
+    elif "duration_hours" in prefs:
+        # 기존 세션에 저장된 시간 선호도도 PR #47 이후 계속 쓸 수 있어야 한다.
+        duration_fields = {
+            "duration_hours": prefs["duration_hours"],
+            "duration_hours_min": None,
+        }
+
     context_data = ContextData(
         user_query=user_query,
         current_lat=lat,
@@ -609,8 +635,13 @@ def get_context(
         candidate_spots=spots,
         companion=prefs.get("companion", "혼자"),
         mood=prefs.get("mood", ""),
-        duration_hours=duration_hours,
+        transport=prefs.get("transport", "자차"),
+        # 기본 자차는 검색/일정의 Graceful Degradation용 가정일 뿐 사용자 선택이 아니다.
+        transport_assumed=bool(prefs.get("transport_assumed", "transport" not in prefs)),
         region=region,
+        # 사용자가 시간을 말했으면 그 값을 쓰고 범위 하한은 지운다(→ "가용 시간: 8시간").
+        # 말하지 않았으면 ContextData 기본값이 그대로 남는다(→ "가용 시간: 3~5시간").
+        **duration_fields,
     )
 
     return context_data, build_spots_context(spots)

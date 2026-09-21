@@ -19,6 +19,7 @@ from typing import Literal
 from pydantic import BaseModel, ValidationError
 
 from traveler.core.course_generator import generate_course
+from traveler.core.course_schedule import default_stay_minutes
 from traveler.core.edit_intent_prompt import (
     EDIT_INTENT_SYSTEM_PROMPT,
     build_edit_intent_user_message,
@@ -28,13 +29,6 @@ from traveler.rag.types import ContextData, SpotCandidate
 from traveler.validation.schema import RecommendedPlaceModel, StreamingCourseModel
 
 logger = logging.getLogger(__name__)
-
-# WHY 고정값인가(D8): SpotCandidate에는 distance_min만 있고 duration_min이 없다.
-# 지금까지 duration_min은 GPT가 코스 생성 시점에 즉석으로 정하던 값이었다. add·replace로
-# 새로 들어가는 장소는 LLM을 다시 부르지 않고(D3) 이 고정값을 쓴다 — 원래 값도 GPT의
-# 추정치였으므로 정밀도를 잃는 게 아니다.
-NEW_PLACE_DURATION_MIN = 60
-
 
 class EditIntent(BaseModel):
     """
@@ -198,7 +192,7 @@ def apply_edit(
             # 빈 문자열이면 ValueError를 내지만 None은 통과시킨다(백엔드가 나중에
             # SQLite로 채우는 정상 경로) — 그래서 ""을 None으로 정규화해야 한다.
             place_name=new_spot.place_name or None,
-            duration_min=NEW_PLACE_DURATION_MIN,  # D8
+            duration_min=default_stay_minutes(new_spot.category),
         )
         places = [new_place if p is target else p for p in places]
         old_name = target.place_name or "해당 장소"
@@ -220,7 +214,7 @@ def apply_edit(
             place_id=new_spot.place_id,
             visit_sequence=1,
             place_name=new_spot.place_name or None,  # #31 PM 리뷰 4번 — replace와 동일 이유
-            duration_min=NEW_PLACE_DURATION_MIN,  # D8
+            duration_min=default_stay_minutes(new_spot.category),
         )
         if edit.insert_after is None:
             places = places + [new_place]
