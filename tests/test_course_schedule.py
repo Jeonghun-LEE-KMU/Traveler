@@ -310,3 +310,29 @@ def test_public_transport_is_unverified_and_does_not_add_candidates(monkeypatch)
     assert result.status == "unverified"
     assert [place.place_id for place in result.places] == ["1"]
     assert "이동 수단" in result.note
+
+
+def test_far_origin_falls_back_to_search_center_when_budget_exhausted():
+    """서울 GPS + 경주 코스 요청 → origin 이동이 예산 초과 → search center로 재시도."""
+    # 실제 거리 기반 추정을 사용한다 (mock 없음).
+    # 경주 spot들, 검색 중심도 경주, origin만 서울(~280km 이상)
+    spots = [
+        _spot(str(i), lat=35.85 + i * 0.01, lng=129.22 + i * 0.01)
+        for i in range(1, 4)
+    ]
+    ctx = _ctx(spots=spots, hours=3, lat=35.85, lng=129.22)
+    ctx.schedule_origin_lat = 37.5   # 서울
+    ctx.schedule_origin_lng = 127.0
+    course = _course(*[
+        RecommendedPlaceModel(place_id=str(i), visit_sequence=i, duration_min=40)
+        for i in range(1, 4)
+    ])
+
+    result = apply_schedule(course, ctx)
+
+    # 서울 origin으로는 예산 초과이므로 search center fallback으로 코스가 만들어져야 한다.
+    assert result.status == "within_budget"
+    assert len(result.places) >= 1
+    # schedule_origin_lat 값 자체는 변경되지 않아야 한다.
+    assert ctx.schedule_origin_lat == 37.5
+    assert ctx.schedule_origin_lng == 127.0
