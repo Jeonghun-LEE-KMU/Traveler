@@ -17,7 +17,7 @@ from langchain_core.messages import SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
-from langchain_community.chat_message_histories import ChatMessageHistory
+from langchain_core.chat_history import InMemoryChatMessageHistory as ChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
 from config import (
@@ -340,6 +340,14 @@ async def chat_endpoint(
 
         mode_kr = MODE_TO_KR.get(mode, "타지")
         radius_km = RADIUS_BY_MODE[mode]
+        # WHY: 이번 요청에 시간 표현이 없으면 세션에 저장된 이전 duration이 그대로
+        # context_data에 들어가 "3시간 코스" 후 시간 언급 없는 요청도 3시간으로 잡힌다.
+        # ContextData 기본값(5시간)을 쓰도록 prefs에서 duration 키를 제거한다.
+        prefs_for_context = (
+            {k: v for k, v in prefs.items() if k not in ("duration_minutes", "duration_hours")}
+            if request_minutes is None
+            else prefs
+        )
         context_data, _ = await asyncio.to_thread(
             rag_get_context,
             llm_query,
@@ -347,7 +355,7 @@ async def chat_endpoint(
             lon,
             weather,
             visited | extra_ids,  # ⚠️ 주의: visited를 직접 수정(|=)하면 안 된다 — 이번 검색 한정 제외
-            prefs,
+            prefs_for_context,
             radius_km,
             top_k=CANDIDATE_POOL_SIZE,
             fallback_region=fallback_region,
@@ -400,7 +408,7 @@ async def chat_endpoint(
 @app.post("/api/session/{session_id}/visited")
 async def add_visited_places(
         session_id: str,
-        place_ids: list[str] = Body(..., example=["1", "3", "7"]),
+        place_ids: list[str] = Body(..., examples=[["1", "3", "7"]]),
 ):
     """코스 확정 시 방문 장소 등록 (이후 추천에서 제외)"""
     await add_visited(session_id, place_ids)
