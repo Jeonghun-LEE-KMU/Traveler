@@ -121,6 +121,9 @@ def _budget_min(ctx: ContextData) -> int | None:
     return int(hours * 60)
 
 
+_FAR_ORIGIN_THRESHOLD_KM = 100.0
+
+
 def _origin_coordinates(ctx: ContextData) -> tuple[object, object]:
     """Use the actual incoming GPS when the integration layer supplies it.
 
@@ -132,6 +135,15 @@ def _origin_coordinates(ctx: ContextData) -> tuple[object, object]:
     if origin_lat is not None or origin_lng is not None:
         return origin_lat, origin_lng
     return ctx.current_lat, ctx.current_lng
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    from math import radians, cos, sin, atan2, sqrt
+    R = 6371.0
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+    return R * 2 * atan2(sqrt(a), sqrt(1 - a))
 
 
 def _estimate_leg_minutes(
@@ -303,6 +315,7 @@ def apply_schedule(
     places, defaults_added = _with_stay_defaults(places, candidates_by_id)
     adjusted = adjusted or defaults_added
     original_stays = {place.place_id: place.duration_min for place in places}
+    _grounded_full = grounded_places  # kept for far-origin retry
 
     # A server-built no_feasible result has no selection by design.  Only replace
     # a removed *unknown* LLM selection during an initial generation, never an
@@ -421,6 +434,49 @@ def apply_schedule(
             totals = proposed_totals
             selected_ids.add(candidate_id)
             adjusted = True
+
+    if not places:
+        # WHY: 사용자 GPS가 검색 지역과 매우 멀 때(예: 서울 사용자가 "경주 코스" 요청)
+        # origin→첫장소 이동이 예산을 전부 소진한다. 이 경우 검색 중심을 임시 출발지로
+        # 재시도하여 로컬 코스를 생성한다. ctx.schedule_origin_lat 값은 변경하지 않는다.
+        _retry_with_search_center = False
+        _o_lat, _o_lng = _origin_coordinates(ctx)
+        _s_lat, _s_lng = ctx.current_lat, ctx.current_lng
+        if (fill_minimum
+                and _valid_coordinate(_o_lat, _o_lng)
+                and _valid_coordinate(_s_lat, _s_lng)
+                and _haversine_km(_o_lat, _o_lng, _s_lat, _s_lng) > _FAR_ORIGIN_THRESHOLD_KM):
+            _retry_with_search_center = True
+
+        if _retry_with_search_center:
+            _saved_origin_lat = getattr(ctx, "schedule_origin_lat", None)
+            _saved_origin_lng = getattr(ctx, "schedule_origin_lng", None)
+            ctx.schedule_origin_lat = _s_lat
+            ctx.schedule_origin_lng = _s_lng
+            try:
+                places = _resequence(_grounded_full[:maximum])
+                places, _d2 = _with_stay_defaults(places, candidates_by_id)
+                while places and sum(p.duration_min or 0 for p in places) > budget_min:
+                    places = places[:-1]
+                    adjusted = True
+                    trimmed_for_budget = True
+                if places:
+                    totals = _route_totals(places, ctx, candidates_by_id, speed_kmh)
+                    if totals is None:
+                        places = []
+                    else:
+                        while places and totals[2] > budget_min:
+                            places = places[:-1]
+                            adjusted = True
+                            trimmed_for_budget = True
+                            if places:
+                                totals = _route_totals(places, ctx, candidates_by_id, speed_kmh)
+                                if totals is None:
+                                    places = []
+                                    break
+            finally:
+                ctx.schedule_origin_lat = _saved_origin_lat
+                ctx.schedule_origin_lng = _saved_origin_lng
 
     if not places:
         return _no_feasible_result(
