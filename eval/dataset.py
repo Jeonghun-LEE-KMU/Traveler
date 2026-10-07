@@ -7,8 +7,8 @@
 API 키 없이도 항상 성공해야 한다(pytest에서 회귀 없이 돌아가야 하므로).
 
 `ctx` 딕셔너리 키는 ContextData 필드명과 정확히 1:1이어야 한다.
-`ContextData(**row["ctx"])`로 바로 복원하기 때문에, 계약이 어긋나면(오타 등)
-여기서 즉시 TypeError로 실패해야 드리프트를 조기에 잡는다.
+후보 객체 복원과 레거시 고정 시간의 하한 보정 후 ContextData로 복원한다.
+알 수 없는 키(오타 등)는 TypeError로 실패해 계약 드리프트를 조기에 잡는다.
 """
 
 import json
@@ -60,6 +60,9 @@ def load_cases(path: Path, *, mode: str | None = None) -> list[GoldenCase]:
             ctx_dict["candidate_spots"] = [
                 SpotCandidate(**spot) for spot in ctx_dict["candidate_spots"]
             ]
+            # 레거시 고정 시간에 새 기본 범위의 하한 3시간이 붙지 않게 한다.
+            if "duration_hours" in ctx_dict and "duration_hours_min" not in ctx_dict:
+                ctx_dict["duration_hours_min"] = None
             ctx = ContextData(**ctx_dict)
 
             cases.append(
