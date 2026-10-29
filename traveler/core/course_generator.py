@@ -78,7 +78,7 @@ def validate_course_schedule(
             names = [p.place_name or p.place_id for p in result.places]
             message = ("가용시간을 고려한 최종 코스: " + " → ".join(names)
                        if names else "가용시간 안에 추천할 수 있는 장소를 찾지 못했습니다.")
-        message += "\n\n[예상 일정] " + result.note
+        message += "\n\n" + result.note
     return StreamingCourseModel(
         bot_message=message, recommended_places=result.places, time_budget=timing,
     )
