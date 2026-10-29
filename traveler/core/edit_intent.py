@@ -31,14 +31,30 @@ from traveler.validation.schema import RecommendedPlaceModel, StreamingCourseMod
 logger = logging.getLogger(__name__)
 
 
-def _josa_eul_reul(name: str) -> str:
-    """받침 유무에 따라 '을'/'를' 반환."""
+def _has_jongseong(name: str) -> bool:
     if not name:
-        return "를"
+        return False
+    code = ord(name[-1])
+    return 0xAC00 <= code <= 0xD7A3 and (code - 0xAC00) % 28 != 0
+
+
+def _josa_eul_reul(name: str) -> str:
+    return "을" if _has_jongseong(name) else "를"
+
+
+def _josa_euro(name: str) -> str:
+    """받침 유무에 따라 '으로'/'로' 반환. 받침이 'ㄹ'이면 '로'."""
+    if not name:
+        return "로"
     code = ord(name[-1])
     if 0xAC00 <= code <= 0xD7A3:
-        return "을" if (code - 0xAC00) % 28 != 0 else "를"
-    return "를"
+        jongseong = (code - 0xAC00) % 28
+        if jongseong == 0:
+            return "로"   # 받침 없음
+        if jongseong == 8:
+            return "로"   # ㄹ 받침
+        return "으로"
+    return "로"
 
 
 class EditIntent(BaseModel):
@@ -208,7 +224,7 @@ def apply_edit(
         places = [new_place if p is target else p for p in places]
         old_name = target.place_name or "해당 장소"
         new_name = new_spot.place_name or "새 장소"
-        return _resequence(places), f"{old_name} 대신 {new_name}(으)로 바꿨어요."
+        return _resequence(places), f"{old_name} 대신 {new_name}{_josa_euro(new_name)} 바꿨어요."
 
     if edit.action == "add":
         if edit.new_place_id is None:

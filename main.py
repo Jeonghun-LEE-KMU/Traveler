@@ -35,7 +35,7 @@ from traveler.core.course_response import application_error_event, course_payloa
 from traveler.core.edit_intent import revise_course
 from traveler.core.prompt import get_system_prompt, build_context_message
 from traveler.core.stream_text import BotMessageExtractor
-from traveler.rag.retriever import get_context as rag_get_context
+from traveler.rag.retriever import get_context as rag_get_context, search_places
 from traveler.rag.session import (
     add_visited,
     get_visited,
@@ -507,6 +507,35 @@ async def revise_chat_endpoint(req: ReviseRequest):
     revised = await revise_course(
         req.user_message, course, context_data, travel_mode=mode_kr, visited=visited,
     )
+
+    # 후보 풀 소진으로 replace/add 실패 시 사용자 발화로 재검색해서 후보를 보충한다.
+    # (처음 검색 쿼리가 "맛집 위주"였으면 활동적인 장소가 후보에 없을 수 있음)
+    _NO_CANDIDATE = "말씀하신 장소는 추천 후보에 없거나 이미 코스에 있어요."
+    if revised.bot_message == _NO_CANDIDATE:
+        try:
+            extra_spots = search_places(
+                user_query=req.user_message,
+                lat=context_data.current_lat,
+                lon=context_data.current_lng,
+                visited=visited,
+                prefs={},
+                top_k=10,
+            )
+            if extra_spots:
+                existing_ids = {s.place_id for s in context_data.candidate_spots}
+                new_spots = [s for s in extra_spots if s.place_id not in existing_ids]
+                if new_spots:
+                    extended_ctx = replace(
+                        context_data,
+                        candidate_spots=context_data.candidate_spots + new_spots,
+                    )
+                    revised = await revise_course(
+                        req.user_message, course, extended_ctx,
+                        travel_mode=mode_kr, visited=visited,
+                    )
+                    context_data = extended_ctx
+        except Exception as e:
+            logger.warning("[Revise] 후보 보충 재검색 실패, 원본 응답 유지: %s", e)
     # WHY: 장소 추가·교체·순서 변경으로 이동 합계가 바뀐다. 수정에도 같은 시간
     # 검증을 하되, "빼줘"로 줄인 코스를 최소 3곳 규칙으로 다시 채우면 안 된다.
     revised = validate_course_schedule(revised, context_data, fill_minimum=False)
