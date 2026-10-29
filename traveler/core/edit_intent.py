@@ -30,6 +30,17 @@ from traveler.validation.schema import RecommendedPlaceModel, StreamingCourseMod
 
 logger = logging.getLogger(__name__)
 
+
+def _josa_eul_reul(name: str) -> str:
+    """받침 유무에 따라 '을'/'를' 반환."""
+    if not name:
+        return "를"
+    code = ord(name[-1])
+    if 0xAC00 <= code <= 0xD7A3:
+        return "을" if (code - 0xAC00) % 28 != 0 else "를"
+    return "를"
+
+
 class EditIntent(BaseModel):
     """
     분류기(classify_edit_intent)의 출력. action별로 어떤 필드가 채워지는지는
@@ -171,7 +182,7 @@ def apply_edit(
             return original, "말씀하신 순번의 장소를 찾을 수 없었어요."
         places = [p for p in places if p is not target]
         name = target.place_name or "해당 장소"
-        return _resequence(places), f"{name}를 코스에서 뺐어요."
+        return _resequence(places), f"{name}{_josa_eul_reul(name)} 코스에서 뺐어요."
 
     if edit.action == "replace":
         if edit.target_sequence is None or edit.new_place_id is None:
@@ -197,7 +208,7 @@ def apply_edit(
         places = [new_place if p is target else p for p in places]
         old_name = target.place_name or "해당 장소"
         new_name = new_spot.place_name or "새 장소"
-        return _resequence(places), f"{old_name} 대신 {new_name}로 바꿨어요."
+        return _resequence(places), f"{old_name} 대신 {new_name}(으)로 바꿨어요."
 
     if edit.action == "add":
         if edit.new_place_id is None:
@@ -227,7 +238,7 @@ def apply_edit(
                 return original, "말씀하신 위치를 찾을 수 없었어요."
             places = places[: idx + 1] + [new_place] + places[idx + 1 :]
         added_name = new_spot.place_name or "새 장소"
-        return _resequence(places), f"{added_name}를 코스에 추가했어요."
+        return _resequence(places), f"{added_name}{_josa_eul_reul(added_name)} 코스에 추가했어요."
 
     if edit.action == "reorder":
         has_full = edit.new_order is not None
@@ -257,7 +268,7 @@ def apply_edit(
             new_index = edit.move_to_position - 1
             places = remaining[:new_index] + [target] + remaining[new_index:]
             name = target.place_name or "해당 장소"
-            return _resequence(places), f"{name}를 {edit.move_to_position}번째로 옮겼어요."
+            return _resequence(places), f"{name}{_josa_eul_reul(name)} {edit.move_to_position}번째로 옮겼어요."
 
         return original, "순서 변경 요청을 정확히 이해하지 못했어요."
 
@@ -286,7 +297,7 @@ async def revise_course(
     edit = await classify_edit_intent(user_message, course, ctx, visited=visited)
     if edit is None:
         return course.model_copy(
-            update={"bot_message": "무슨 말씀인지 잘 모르겠어요. 다르게 한번 말씀해주시겠어요?"}
+            update={"bot_message": "어떻게 바꿔드릴까요? 예를 들어 '카페 말고 다른 걸로 바꿔줘', '2번째 빼줘'처럼 말씀해 주시면 바로 반영할게요."}
         )
 
     if edit.action == "regenerate_all":
