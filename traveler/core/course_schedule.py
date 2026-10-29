@@ -243,8 +243,7 @@ def _note_within_budget(
     transport_label = transport.strip() if isinstance(transport, str) else "알 수 없는 이동 수단"
     note = (
         f"예상 총 {total_min:.0f}분(이동 {travel_min:.0f}분 + 체류 {stay_min}분) / "
-        f"가용 {budget_min}분 — 출발지→첫 장소와 장소 간 이동 포함, 복귀 이동 제외. "
-        f"좌표 직선거리·{transport_label} 평균{speed_kmh:g}km/h 추정(도로/교통/주차 미반영)"
+        f"가용 {budget_min}분 — 직선거리 기준 추정이라 실제와 다를 수 있어요"
     )
     return f"{note}. {extra}" if extra else note
 

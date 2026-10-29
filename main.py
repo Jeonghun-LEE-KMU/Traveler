@@ -242,7 +242,7 @@ async def _stream_and_persist(
         if course.time_budget:
             final_names = " → ".join(p.place_name or p.place_id for p in course.recommended_places)
             schedule_notice = (
-                "\n\n[예상 일정] 앞선 설명은 검증 전 제안입니다. 아래 최종 코스를 확인해주세요.\n"
+                "\n\n"
                 + course.time_budget.note
                 + ("\n최종 코스: " + final_names if final_names else "\n추천 가능한 코스가 없습니다.")
             )
@@ -513,8 +513,13 @@ async def revise_chat_endpoint(req: ReviseRequest):
     _NO_CANDIDATE = "말씀하신 장소는 추천 후보에 없거나 이미 코스에 있어요."
     if revised.bot_message == _NO_CANDIDATE:
         try:
+            # "먹는거 말고 활동적인 장소" 같은 발화에서 원하는 것만 추출
+            # "말고/빼고/제외" 앞부분은 버리고 뒷부분만 검색 쿼리로 사용
+            import re as _re
+            _trimmed = _re.split(r"말고|빼고|제외하고|대신", req.user_message)[-1].strip()
+            _search_query = _trimmed if len(_trimmed) > 3 else req.user_message
             extra_spots = search_places(
-                user_query=req.user_message,
+                user_query=_search_query,
                 lat=context_data.current_lat,
                 lon=context_data.current_lng,
                 visited=visited,
