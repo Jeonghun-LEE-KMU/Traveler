@@ -310,8 +310,13 @@ async def chat_endpoint(
         if region_name:
             logger.info("[Chat] region=%s lat=%.4f lon=%.4f", region_name, _rlat, _rlon)
             lat, lon = _rlat, _rlon
-        elif session_id in _session_courses:
-            # "다른 코스 추천" 등 지역명 없이 재호출 시 이전 코스 좌표 + 지역 유지
+        elif session_id in _session_courses and any(
+            kw in llm_query
+            for kw in ("다른", "새로운", "새로", "말고", "바꿔", "수정", "빼줘", "제외", "대신", "추가")
+        ):
+            # WHY: 지역명 없이 "다른 코스", "바꿔줘" 등 코스 수정/재추천 요청일 때만
+            # 이전 세션의 지역 좌표를 유지한다. 완전히 새로운 요청(예: "춘천 카페 코스")이
+            # 이전 경주 세션의 좌표를 물려받아 경주 결과가 나오는 오염을 방지한다.
             prev_course, prev_ctx, _ = _session_courses[session_id]
             lat, lon = prev_ctx.current_lat, prev_ctx.current_lng
             prev_region = prev_ctx.region
@@ -321,7 +326,7 @@ async def chat_endpoint(
             if any(kw in llm_query for kw in ("다른", "새로운", "새로", "말고")):
                 extra_ids = {p.place_id for p in prev_course.recommended_places}
             logger.info(
-                "[Chat] region 미감지 → 이전 세션 지역 재사용 region=%s exclude=%d",
+                "[Chat] region 미감지 + 수정 키워드 → 이전 세션 지역 재사용 region=%s exclude=%d",
                 prev_region, len(extra_ids),
             )
         weather, visited, prefs = await asyncio.gather(

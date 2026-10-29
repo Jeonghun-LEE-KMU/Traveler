@@ -365,6 +365,7 @@ def search_places(
                 indoor=r.indoor,
                 lat=r.lat,
                 lng=r.lng,
+                image_url=r.image_url,
             )
             if r.content_type_id == "15":
                 spot.event_start_date, spot.event_end_date = event_dates_by_id.get(

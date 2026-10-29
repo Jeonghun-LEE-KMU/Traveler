@@ -288,6 +288,7 @@ class HybridSearchResult:
     preference_score: float
     iconic_score: float
     final_score: float
+    image_url: str | None = None
 
 
 def detect_region(text: str) -> str | None:
@@ -976,6 +977,7 @@ def search_places(
                 preference_score=preference_score,
                 iconic_score=iconic_score,
                 final_score=final_score,
+                image_url=str(row["image_url"]) if row.get("image_url") else None,
             )
         )
 

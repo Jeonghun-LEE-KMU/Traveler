@@ -47,6 +47,7 @@ class SpotCandidate:
     rest_date: str | None = None  # 휴무일 원문
     event_start_date: str | None = None  # 축제 시작일 'YYYYMMDD' (content_type_id "15"만 채움)
     event_end_date: str | None = None    # 축제 종료일 'YYYYMMDD' (content_type_id "15"만 채움)
+    image_url: str | None = None  # 대표 이미지 URL (TourAPI firstimage)
 
 
 @dataclass

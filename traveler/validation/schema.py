@@ -45,6 +45,7 @@ class RecommendedPlaceModel(BaseModel):
     visit_sequence: int = Field(ge=1)                  # 방문 순서 (1부터) — 필수
     place_name: Optional[str] = None                   # 장소명 — 백엔드가 SQLite로 채움
     duration_min: Optional[int] = None                 # 체류 시간 — TourAPI로 채울 예정. 범위는 _clamp_duration이 흡수
+    recommend_reason: Optional[str] = None             # 이 장소를 고른 이유 (LLM이 채움)
 
     @field_validator("place_name")
     @classmethod

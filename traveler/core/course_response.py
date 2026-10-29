@@ -20,6 +20,12 @@ def course_payload(course: StreamingCourseModel, ctx: ContextData, *, bot_messag
             'place_name': place.place_name or (spot.place_name if spot else None),
             'duration_min': place.duration_min,
             'lat': spot.lat if valid else None, 'lng': spot.lng if valid else None,
+            'recommend_reason': place.recommend_reason or None,
+            'image_url': spot.image_url if spot else None,
+            'event_start_date': spot.event_start_date if spot else None,
+            'event_end_date': spot.event_end_date if spot else None,
+            'use_time': spot.use_time if spot else None,
+            'rest_date': spot.rest_date if spot else None,
         })
     return {
         'bot_message': course.bot_message if bot_message is None else bot_message,

@@ -193,7 +193,8 @@ _COMMON_BASE = """\
 ⚠️ 필드 순서 엄수: bot_message를 반드시 첫 번째 필드로 작성할 것.
    (스트리밍 구조상 텍스트가 먼저 사용자에게 전달되어야 하기 때문)
 ⚠️ recommended_places는 일반적으로 3~5개이며(위 시간·후보 부족 및 명시 개수 예외 적용) place_id와 visit_sequence는 필수입니다.
-   place_name과 duration_min은 선택 필드이고, visit_sequence는 1부터 연속이어야 합니다.
+   place_name, duration_min, recommend_reason은 선택 필드이고, visit_sequence는 1부터 연속이어야 합니다.
+   recommend_reason은 이 장소를 선택한 이유를 1~2문장으로 작성합니다 (사용자 조건·분위기·계절 반영).
 
 ```json
 {
@@ -203,7 +204,8 @@ _COMMON_BASE = """\
       "place_id": "1",
       "place_name": "장소명",
       "visit_sequence": 1,
-      "duration_min": 60
+      "duration_min": 60,
+      "recommend_reason": "이 장소를 고른 이유 (1~2문장)"
     }
   ]
 }
@@ -757,16 +759,16 @@ def build_context_message(
                 f"  - place_id={spot.place_id} | {spot.place_name}"
                 f" | {spot.category} | 좌표 {spot.lat}, {spot.lng} | {indoor_str}"
             )
-            # ⚠️ 주의: 이 if 아래는 절대 비경주 출력에 영향을 주면 안 된다(하드 제약).
-            if gyeongju:
-                line += (
-                    f" | 운영: {_clean_raw_text(spot.use_time)}"
-                    f" | 휴무: {_clean_raw_text(spot.rest_date)}"
-                )
-                if spot.event_start_date and spot.event_end_date:
-                    period = _format_event_period(spot.event_start_date, spot.event_end_date)
-                    if period:
-                        line += f" | 기간: {period}"
+            # 운영시간·휴무는 전 지역에 표시 (데이터 있을 때만)
+            if spot.use_time:
+                line += f" | 운영: {_clean_raw_text(spot.use_time)}"
+            if spot.rest_date:
+                line += f" | 휴무: {_clean_raw_text(spot.rest_date)}"
+            # 경주 전용: 축제 기간 표시
+            if gyeongju and spot.event_start_date and spot.event_end_date:
+                period = _format_event_period(spot.event_start_date, spot.event_end_date)
+                if period:
+                    line += f" | 기간: {period}"
             parts.append(line)
 
     # WHY 후보 목록 유무와 무관하게 맨 뒤에 붙이는가?
