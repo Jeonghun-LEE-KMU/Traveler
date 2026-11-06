@@ -1,44 +1,68 @@
-# mobility_rag
+# 트래블러 — LLM 여행 코스 추천 서비스
 
-이동 수단·거리·동승자 상황에 맞춰 여행 코스를 추천하는 RAG 기반 여행 코스 생성 서비스입니다.
+날씨·동행자·가용 시간 같은 조건을 자연어로 받아 여행 코스를 만드는 GPT-4o 기반 서비스입니다.
+2026 한이음 드림업 팀 프로젝트(2026.04 – 2026.10)이며, 이 저장소는 팀 저장소 `Traveler-map/mobility_rag`의 `develop` 브랜치를 커밋 이력째 옮겨 정리한 개인 포트폴리오용 사본입니다.
 
-## 프로젝트 소개
+## 역할
 
-같은 "여행 코스 추천"이라도 근교 드라이브, 타지 여행, 장거리 여행은 사용자가 기대하는 코스의 성격이 다릅니다. 이 프로젝트는 `travel_mode`(근교/타지/장거리)와 동승자 의도, 계절 등의 맥락을 함께 반영해 숨은 명소·대표 명소·창의적 추천의 비율을 모드별로 다르게 조정하는 RAG 기반 코스 생성 엔진을 만듭니다. 관광 데이터를 수집·전처리해 벡터 DB에 적재하고, 하이브리드 검색으로 후보 스팟을 찾은 뒤 LLM이 상황에 맞는 코스로 구성합니다.
+| 담당 | 내용 |
+|---|---|
+| **이정훈 (팀장)** | 출력 검증과 평가 체계, LLM 코어 안정화 |
+| 팀원 | 관광 데이터 수집·전처리, 검색(RAG), 지도·경로 API, 백엔드 최적화, 프론트엔드 |
 
-## 핵심 기능
+커밋 작성자 기록은 원본 그대로 유지했습니다. 팀원별 작업은 `git log --author`로 확인할 수 있습니다.
 
-- **모드별 추천 정책**: 근교(숨은 명소 70% / 대표 명소 20% / 창의 추천 10%), 타지·장거리(대표 45% / 숨은 45% / 창의 10%)로 코스 성격을 차등화하는 `MODE_WEIGHTS` 기반 프롬프트 정책
-- **하이브리드 RAG 검색**: TourAPI 등 외부 관광 데이터를 수집·전처리해 Pinecone에 임베딩하고, 하이브리드 검색으로 후보 스팟 조회
-- **동승자 의도 파싱**: 누구와 함께 가는지에 따라 코스 추천 방향을 조정
-- **세션 관리 및 선호도 추출**: Redis 기반 세션 관리로 대화 맥락과 사용자 선호도를 유지
-- **Graceful Degradation**: LLM 응답 실패·프롬프트 인젝션·과엄격 검증 등 예외 상황에서도 서비스가 안정적으로 동작하도록 방어 로직 구성
+## 본인이 만든 것
+
+### 1. 평가 파이프라인 (`eval/`)
+- **평가 세트 60건**: 근교·장거리·타지 각 20건 (`eval/cases.jsonl`)
+- **구조 검사**: JSON 스키마 통과, 대체 응답 아님, 장소 수 충족, 후보에 없는 장소 생성 없음 (`eval/metrics.py`). 이 검사를 통과한 코스만 채점
+- **LLM-as-Judge 5축 채점**: 조건 반영, 분위기 일치, 동선, 다양성, 완결성 (0–5점, `eval/judge.py`)
+- **회귀 판정**: 모드별 5축 평균이 기준 버전보다 0.3점 이상 떨어지면 FAIL. 기준 버전이 없거나 채점 표본이 0건이면 PASS로 묻지 않고 INCONCLUSIVE로 분리 (`eval/run_judge.py`)
+- 재현성을 위해 평가 실행은 temperature 0으로 고정
+
+**첫 정식 평가 (2026-10-07)**: 60건 중 56건이 구조 검사 통과 (93.3%). 기준 버전을 처음 만든 실행이라 회귀 비교는 없습니다.
+
+### 2. 출력 검증 (`traveler/validation/`, `traveler/core/`)
+- Pydantic 스키마 검증과 실패 시 대체 응답
+- 가용 시간 파싱, 장소 유형별 체류 시간표, 이동·체류 시간 기반 코스 검증
+- 사용자 입력을 프롬프트 안에서 구획 표시로 분리하고 인젝션 문장 테스트 추가
+- 날씨 등 외부 정보가 없거나 실패해도 LLM 코어가 멈추지 않도록 처리
+
+### 3. 서비스 오류 수정
+- 프롬프트 템플릿 f-string 충돌로 서버가 멈추던 문제 수정
+- 검증·대체 응답 경로를 하나로 합치고, 사용자 화면에 원시 JSON이 노출되던 문제 제거
+- 코스 장소 수 하한 3곳, 생성 temperature 0.3 고정
 
 ## 기술 스택
 
-- **Backend**: Python, FastAPI
-- **LLM/RAG**: Pinecone(벡터 DB), 하이브리드 검색, 프롬프트 정책 기반 코스 생성
-- **세션/인프라**: Redis
-- **데이터**: TourAPI 등 공공 관광 데이터 ETL 파이프라인
+Python, FastAPI, OpenAI API (GPT-4o), LangChain, Pinecone, PostgreSQL, Pydantic, pytest
 
-## 프로젝트 구조
+## 구조
 
 ```
+main.py          FastAPI 진입점 (SSE 스트리밍)
+config.py        환경 변수 로드
 traveler/
-  core/       코스 생성 로직, travel_mode별 시스템 프롬프트 (course_generator.py, prompt.py)
-  rag/        Pinecone 임베딩·하이브리드 검색 (retriever.py)
-  api/        API 관련 모듈
-  data/       관광 데이터 ETL·전처리 스크립트
-  validation/ 응답 검증, 프롬프트 인젝션 방어
-docs/         스프린트 설계 문서, 작업 범위 정의(ADR 성격)
-tests/        LLM 코어 단위 테스트
-scripts/      스모크 테스트 스크립트
-main.py       FastAPI 진입점
-config.py     환경 설정
+  core/          코스 생성, 프롬프트, 의도·시간 파싱
+  rag/           하이브리드 검색 (팀원)
+  api/           외부 API 래퍼 (팀원)
+  data/          관광 데이터 수집·전처리 (팀원)
+  validation/    응답 스키마 검증
+eval/            평가 파이프라인
+tests/           단위 테스트
+docs/            설계 문서, 원 팀 README (TEAM_README.md)
 ```
 
-## 개발 진행 상황
+## 실행
 
-Sprint 1(LLM 코어 패키지 구축) → Sprint 2(Redis 세션 관리, TourAPI 수집 파이프라인, 전처리) → Sprint 3(Pinecone 임베딩 스크립트, 하이브리드 검색 구현) 순으로 진행했으며, 현재 `travel_mode` 파라미터를 API 레벨까지 연결하는 MVP1 단계입니다.
+```bash
+pip install -r requirements.txt
+# config.py의 변수 이름을 참고해 .env 작성
+uvicorn main:app --reload
 
-> 팀 프로젝트 저장소로 비공개 운영 중입니다.
+pytest                                                    # 단위 테스트
+python eval/run_judge.py --dataset eval/cases.jsonl --out eval/report.json   # 평가 (OpenAI API 호출)
+```
+
+API 키(OpenAI, Pinecone, 공공데이터포털, Tmap 등)와 관광 데이터 DB는 저장소에 포함하지 않습니다.

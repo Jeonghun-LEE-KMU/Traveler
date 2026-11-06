@@ -24,3 +24,7 @@ traveler/data/csv/
 traveler/data/snapshots/
 traveler/data/test_result_csv/
 .omc/
+
+# IDE / OS
+.idea/
+desktop.ini
